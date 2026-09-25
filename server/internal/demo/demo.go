@@ -7,7 +7,6 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -764,9 +763,10 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 			now := time.Now().UTC()
 			points := make([]map[string]any, numPoints)
 			baseVal := srv.CPU
-			if metric == "memory" {
+			switch metric {
+			case "memory":
 				baseVal = srv.Memory
-			} else if metric == "disk" {
+			case "disk":
 				baseVal = srv.Disk
 			}
 
@@ -828,11 +828,12 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 			for _, srv := range store.servers {
 				points := make([]map[string]any, numPoints)
 				baseVal := srv.CPU
-				if metric == "memory" {
+				switch metric {
+				case "memory":
 					baseVal = srv.Memory
-				} else if metric == "disk" {
+				case "disk":
 					baseVal = srv.Disk
-				} else if metric == "network" {
+				case "network":
 					baseVal = math.Mod(srv.CPU*1.8, 100.0)
 				}
 
@@ -1655,7 +1656,3 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 	r.Get("/ws", realtime.HandleWebSocket(hub, ticketStore))
 }
 
-func init() {
-	_ = strconv.Itoa(0)
-	_ = fmt.Sprintf("")
-}
