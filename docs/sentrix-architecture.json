@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SentriX Observability Platform Architecture",
+    "output": "sentrix-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "metric-ingestion",
+        "label": "Metric Ingestion & Storage",
+        "focus": ["c_agent", "ingest_api", "ts_db"],
+        "note": "High-throughput metric collection from C11 agent to TimescaleDB hypertables."
+      },
+      {
+        "id": "alert-triage",
+        "label": "Incident Triage & Alerting",
+        "focus": ["c_agent", "ingest_api", "alert_engine", "notify_hub", "external_outlets"],
+        "note": "Real-time anomaly detection, hysteresis evaluation, and multi-channel incident dispatch."
+      },
+      {
+        "id": "live-dashboard",
+        "label": "Live Telemetry & Dashboard",
+        "focus": ["c_agent", "ingest_api", "ws_hub", "web_ui"],
+        "note": "Real-time WebSocket streaming of live system metrics to the React glassmorphic UI."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "c_agent",
+      "type": "backend",
+      "label": "sentrix-agent",
+      "sublabel": "C11 Native Daemon",
+      "tag": "Linux / <10ms",
+      "pos": [30, 240],
+      "size": [130, 64]
+    },
+    {
+      "id": "ingest_api",
+      "type": "backend",
+      "brand": "go",
+      "label": "Ingestion API",
+      "sublabel": "Token Guard · Replay Guard",
+      "tag": "HTTP :8080",
+      "pos": [265, 240],
+      "size": [135, 64]
+    },
+    {
+      "id": "alert_engine",
+      "type": "backend",
+      "brand": "go",
+      "label": "Alerting Engine",
+      "sublabel": "Thresholds & Hysteresis",
+      "tag": "Incident Triage",
+      "pos": [505, 100],
+      "size": [135, 64]
+    },
+    {
+      "id": "ts_db",
+      "type": "database",
+      "brand": "postgresql",
+      "label": "TimescaleDB (pg16)",
+      "sublabel": "Hypertables & Rollups",
+      "tag": "30d Retention",
+      "pos": [505, 240],
+      "size": [135, 64]
+    },
+    {
+      "id": "ws_hub",
+      "type": "backend",
+      "brand": "go",
+      "label": "WebSocket Hub",
+      "sublabel": "Live Telemetry Broadcast",
+      "tag": "Realtime Stream",
+      "pos": [505, 380],
+      "size": [135, 64]
+    },
+    {
+      "id": "notify_hub",
+      "type": "messagebus",
+      "label": "Notification Hub",
+      "sublabel": "Channel Dispatcher",
+      "tag": "Async Outlets",
+      "pos": [750, 100],
+      "size": [135, 64]
+    },
+    {
+      "id": "web_ui",
+      "type": "frontend",
+      "brand": "react",
+      "label": "React Dashboard",
+      "sublabel": "Obsidian Glassmorphic UI",
+      "tag": "Vite + Tailwind",
+      "pos": [750, 380],
+      "size": [135, 64]
+    },
+    {
+      "id": "external_outlets",
+      "type": "external",
+      "label": "Alert Channels",
+      "sublabel": "Slack · Discord · PagerDuty",
+      "tag": "Webhooks",
+      "pos": [995, 100],
+      "size": [135, 64]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "SentriX Platform Core (Go + TimescaleDB + Web Console)",
+      "wraps": ["ingest_api", "alert_engine", "ts_db", "ws_hub", "notify_hub", "web_ui"]
+    },
+    {
+      "kind": "security-group",
+      "label": "Target Host (Linux Fleet)",
+      "wraps": ["c_agent"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "agent-to-ingest",
+      "from": "c_agent",
+      "to": "ingest_api",
+      "label": "HTTP POST JSON",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ingest-to-alert",
+      "from": "ingest_api",
+      "to": "alert_engine",
+      "label": "Metric Stream",
+      "fromSide": "top",
+      "toSide": "left"
+    },
+    {
+      "id": "ingest-to-db",
+      "from": "ingest_api",
+      "to": "ts_db",
+      "label": "Batch Insert",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "ingest-to-ws",
+      "from": "ingest_api",
+      "to": "ws_hub",
+      "label": "Broadcast Event",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "id": "alert-to-notify",
+      "from": "alert_engine",
+      "to": "notify_hub",
+      "label": "Incident Trigger",
+      "variant": "security",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "notify-to-outlets",
+      "from": "notify_hub",
+      "to": "external_outlets",
+      "label": "Webhook Dispatch",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "ws-to-ui",
+      "from": "ws_hub",
+      "to": "web_ui",
+      "label": "WebSocket Stream",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Agent & Ingestion",
+      "items": [
+        "C11 native daemon with sub-10ms collection latency and <15MB RSS",
+        "High-throughput Go ingestion core with token authentication and rate limiting"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Storage & Telemetry",
+      "items": [
+        "TimescaleDB PostgreSQL 16 hypertables with continuous aggregates & rollups",
+        "Real-time WebSocket event hub streaming live fleet metrics to the React UI"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Incident & Dispatch",
+      "items": [
+        "Multi-stage incident triage (Open, Acknowledged, Resolved) with hysteresis",
+        "Asynchronous dispatch to Slack, Discord, PagerDuty, and custom webhooks"
+      ]
+    }
+  ]
+}

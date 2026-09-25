@@ -25,3 +25,7 @@ agent/build/
 # OS
 .DS_Store
 Thumbs.db
+
+# Tooling and Artifacts
+archify/
+*.visual-check.*

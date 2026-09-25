@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.2.0
+
+### Added
+- **Enterprise Observability Suite (Phases 0–25)**:
+  - **Distributed Tracing & APM (Phase 6)**: W3C TraceContext propagation (`traceparent`, `tracestate`), span watermarking, latency waterfall views, and service bottleneck analysis.
+  - **Dynamic Service Map & Synthetics (Phase 7)**: Live topology graph with edge RPS and p99 latency rates; multi-target synthetic monitoring (HTTP, TCP, DNS) with SSL expiry detection.
+  - **SLO & SLI Management (Phase 8)**: Availability and latency Service Level Indicators with real-time error budget burn rate calculations and alerting.
+  - **Custom Dashboards (Phase 9)**: Drag-and-drop dashboard grid builder with interactive timeseries charts, gauge clusters, status tables, and markdown widgets.
+  - **Agent 2.0 & Systems Collector (Phase 10)**: Low-footprint native C11 daemon with bounded memory footprint, dynamic socket connection tracing, and process tree grouping.
+  - **Container & Kubernetes Deep Monitoring (Phases 11–12)**: Unified cgroup v1/v2 container metrics aggregator and Kubernetes cluster topology, pod lifecycle, and node pressure monitoring.
+  - **AI-Assisted Root Cause Analysis (Phase 13)**: Metric anomaly detection, log clustering, and automated incident hypothesis generation.
+  - **Automated Runbooks & Remediation (Phase 14)**: Parameterized remediation workflows with dry-run capabilities and full audit trails.
+  - **Enterprise Alert Engine 2.0 & Incident Management (Phases 2–5, 15)**: Multi-channel notifications (Slack, PagerDuty, Webhooks) with resilient dead-letter queue (DLQ) retry backoff, incident timeline comments, and escalation policies.
+  - **Centralized Log Streaming & Full-Text Search (Phase 5)**: Real-time log streaming, full-text regex querying, and severity filters.
+
+---
+
 ## v1.1.0
 
 ### Added
