@@ -113,7 +113,7 @@ export function Layout({ children }: { children: ReactNode }) {
                   SentriX
                 </span>
                 <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary-light font-semibold border border-primary/30">
-                  v0.6
+                  v1.2.0
                 </span>
               </div>
               <p className="text-[11px] text-muted tracking-wide flex items-center gap-1">

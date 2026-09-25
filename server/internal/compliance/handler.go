@@ -124,21 +124,21 @@ var defaultDR = DisasterRecoveryPosture{
 var defaultSBOM = []SBOMRecord{
 	{
 		Component:       "sentrix-server (Go Backend)",
-		Version:         "v0.6.0",
+		Version:         "v1.2.0",
 		License:         "Apache-2.0",
 		Vulnerabilities: 0,
 		SHA256:          "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 	},
 	{
 		Component:       "sentrix-agent (C Core)",
-		Version:         "v0.6.0",
+		Version:         "v1.2.0",
 		License:         "Apache-2.0",
 		Vulnerabilities: 0,
 		SHA256:          "8f434346648f6b96df89dda901c5176b10a6d83961dd3c1ac88b59b2dc327aa4",
 	},
 	{
 		Component:       "sentrix-web (React/TypeScript)",
-		Version:         "v0.6.0",
+		Version:         "v1.2.0",
 		License:         "Apache-2.0",
 		Vulnerabilities: 0,
 		SHA256:          "a14f6e3c98dc2a11b0e352f78a2e1d09e3a6c189b09a7384cf2b3e4f71a0e88b",

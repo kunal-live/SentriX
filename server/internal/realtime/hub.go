@@ -152,10 +152,10 @@ func HandleWebSocket(hub *Hub, store *TicketStore) http.HandlerFunc {
 
 		go func() {
 			defer cancel()
-			client.readPump(ctx)
+			client.writePump(ctx)
 		}()
 
-		go client.writePump(ctx)
+		client.readPump(ctx)
 	}
 }
 

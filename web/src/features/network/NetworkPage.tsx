@@ -110,26 +110,26 @@ export function NetworkPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="TCP Retransmit Rate"
-          value={data ? `${data.tcp_metrics.retransmit_rate_percent}%` : '0.08%'}
-          subtitle={data ? `${data.tcp_metrics.retransmits_per_sec}/s Retransmits` : '12.4/s'}
+          value={data ? `${data.tcp_metrics?.retransmit_rate_percent ?? 0.08}%` : '0.08%'}
+          subtitle={data ? `${data.tcp_metrics?.retransmits_per_sec ?? 12.4}/s Retransmits` : '12.4/s'}
           icon={<Activity size={18} className="text-healthy" />}
         />
         <MetricCard
           title="Active TCP Connections"
-          value={data ? data.tcp_metrics.total_connections.toLocaleString() : '4,820'}
+          value={data ? (data.tcp_metrics?.total_connections?.toLocaleString() ?? '4,820') : '4,820'}
           subtitle="Open Sockets In Mesh"
           icon={<Layers size={18} className="text-primary-light" />}
         />
         <MetricCard
           title="DNS P99 Lookup Latency"
-          value={data ? `${data.dns_metrics.p99_latency_ms} ms` : '6.10 ms'}
+          value={data ? `${data.dns_metrics?.p99_latency_ms ?? 6.10} ms` : '6.10 ms'}
           subtitle="CoreDNS Cluster Ingress"
           icon={<Globe size={18} className="text-cyan" />}
         />
         <MetricCard
           title="DNS Failure Rate"
-          value={data ? `${data.dns_metrics.failure_rate_percent}%` : '0.02%'}
-          subtitle={data ? `${data.dns_metrics.queries_per_sec} queries/s` : '840 QPS'}
+          value={data ? `${data.dns_metrics?.failure_rate_percent ?? 0.02}%` : '0.02%'}
+          subtitle={data ? `${data.dns_metrics?.queries_per_sec ?? 840} queries/s` : '840 QPS'}
           icon={<Zap size={18} className="text-healthy" />}
         />
       </div>
@@ -163,13 +163,13 @@ export function NetworkPage() {
                 <div className="p-2.5 rounded-lg bg-background/50 border border-border">
                   <div className="text-[10px] text-muted">RX (Ingress)</div>
                   <div className="text-sm font-bold text-cyan mt-0.5">{iface.rx_mbps} MB/s</div>
-                  <div className="text-[10px] text-muted">{iface.rx_packets_sec.toLocaleString()} pps</div>
+                  <div className="text-[10px] text-muted">{iface.rx_packets_sec?.toLocaleString() ?? '0'} pps</div>
                 </div>
 
                 <div className="p-2.5 rounded-lg bg-background/50 border border-border">
                   <div className="text-[10px] text-muted">TX (Egress)</div>
                   <div className="text-sm font-bold text-primary-light mt-0.5">{iface.tx_mbps} MB/s</div>
-                  <div className="text-[10px] text-muted">{iface.tx_packets_sec.toLocaleString()} pps</div>
+                  <div className="text-[10px] text-muted">{iface.tx_packets_sec?.toLocaleString() ?? '0'} pps</div>
                 </div>
               </div>
             </div>
@@ -185,7 +185,8 @@ export function NetworkPage() {
           <div className="space-y-3">
             {data?.socket_states &&
               Object.entries(data.socket_states).map(([st, count]) => {
-                const pct = Math.round((count / (data.tcp_metrics.total_connections || 1)) * 100);
+                const total = data.tcp_metrics?.total_connections || 1;
+                const pct = Math.round((count / total) * 100);
                 return (
                   <div key={st} className="space-y-1 font-mono text-xs">
                     <div className="flex justify-between text-[11px]">

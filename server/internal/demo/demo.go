@@ -609,11 +609,16 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 			w.WriteHeader(http.StatusNoContent)
 		})
 
+		r.Post("/ws-ticket", realtime.HandleIssueTicket(ticketStore))
+
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAuth)
 			r.Get("/me", auth.HandleMe())
 		})
 	})
+
+	r.Post("/realtime/ticket", realtime.HandleIssueTicket(ticketStore))
+	r.Post("/auth/ws-ticket", realtime.HandleIssueTicket(ticketStore))
 
 	// Agent Endpoints
 	r.Post("/agent/enroll", func(w http.ResponseWriter, r *http.Request) {
