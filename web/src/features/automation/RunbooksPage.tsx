@@ -75,7 +75,9 @@ export const RunbooksPage: React.FC = () => {
     if (!executingRunbook) return;
     try {
       setRunningAction(true);
-      const res = await api.post(`/runbooks/${executingRunbook.id}/execute`);
+      const res = await api.post(`/runbooks/${executingRunbook.id}/execute`, {
+        approved: approvedGate || !executingRunbook.requires_approval,
+      });
       setExecutionResult(res.data);
       fetchData();
     } catch (err: any) {

@@ -28,7 +28,7 @@ import {
   TrendingDown,
   Info,
 } from 'lucide-react';
-import { Badge } from '../../components/ui/Primitives';
+import { Badge, ConfirmDialog } from '../../components/ui/Primitives';
 
 const defaultForm: CreateAlertRuleInput = {
   name: 'High CPU Saturation & Throttling',
@@ -52,11 +52,11 @@ const metricsCatalog = [
 ];
 
 const ruleTypesCatalog = [
-  { key: 'THRESHOLD', label: 'Threshold (Static boundary)' },
-  { key: 'RATE', label: 'Rate of Change (Derivative)' },
-  { key: 'PERCENTAGE', label: 'Percentage Ratio' },
-  { key: 'COMPOSITE', label: 'Composite (Multi-condition)' },
-  { key: 'ANOMALY', label: 'Statistical Anomaly (Z-score)' },
+  { key: 'THRESHOLD', label: 'Threshold (Static boundary)', desc: 'Fires when metric breaches an absolute constant threshold.' },
+  { key: 'RATE', label: 'Rate of Change (Derivative)', desc: 'Calculates the rate of growth/second to detect sudden traffic spikes.' },
+  { key: 'PERCENTAGE', label: 'Percentage Ratio', desc: 'Compares metric value as a fractional ratio of total capacity.' },
+  { key: 'COMPOSITE', label: 'Composite (Multi-condition)', desc: 'Evaluates boolean AND/OR conditions across CPU, Memory and Disk.' },
+  { key: 'ANOMALY', label: 'Statistical Anomaly (Z-score)', desc: 'Flags dynamic deviations exceeding 3 standard deviations from moving average.' },
 ];
 
 export function AlertRulesPage() {
@@ -69,6 +69,7 @@ export function AlertRulesPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [simulationResult, setSimulationResult] = useState<SimulationResult | null>(null);
   const [filterType, setFilterType] = useState<string>('ALL');
+  const [ruleToDelete, setRuleToDelete] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -92,9 +93,14 @@ export function AlertRulesPage() {
     setSimulationResult(res);
   }
 
-  async function handleDelete(ruleId: string) {
-    if (confirm('Are you sure you want to delete this alert rule?')) {
-      await deleteRule.mutateAsync(ruleId);
+  function handleDelete(ruleId: string) {
+    setRuleToDelete(ruleId);
+  }
+
+  async function confirmDelete() {
+    if (ruleToDelete) {
+      await deleteRule.mutateAsync(ruleToDelete);
+      setRuleToDelete(null);
     }
   }
 
@@ -213,6 +219,9 @@ export function AlertRulesPage() {
                     </option>
                   ))}
                 </select>
+                <p className="mt-1.5 text-[11px] text-muted/80 leading-normal">
+                  {ruleTypesCatalog.find((rt) => rt.key === (form.rule_type || 'THRESHOLD'))?.desc}
+                </p>
               </div>
 
               <div>
@@ -498,6 +507,17 @@ export function AlertRulesPage() {
           );
         })}
       </div>
+
+      <ConfirmDialog
+        isOpen={!!ruleToDelete}
+        title="Delete Alert Rule?"
+        message="Are you sure you want to permanently delete this alert rule? Notification triggers and telemetry evaluation will immediately halt."
+        confirmText="Delete Rule"
+        confirmVariant="critical"
+        onConfirm={confirmDelete}
+        onCancel={() => setRuleToDelete(null)}
+        loading={deleteRule.isPending}
+      />
     </div>
   );
 }

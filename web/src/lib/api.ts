@@ -21,36 +21,48 @@ export function clearTokens(): void {
   localStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
-async function refreshSession(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
+let activeRefreshPromise: Promise<boolean> | null = null;
 
-  if (!refreshToken) {
-    return false;
+async function refreshSession(): Promise<boolean> {
+  if (activeRefreshPromise) {
+    return activeRefreshPromise;
   }
 
-  try {
-    const res = await fetch(`${API_BASE}/auth/refresh`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        refresh_token: refreshToken,
-      }),
-    });
+  activeRefreshPromise = (async () => {
+    const refreshToken = getRefreshToken();
 
-    if (!res.ok) {
-      clearTokens();
+    if (!refreshToken) {
       return false;
     }
 
-    const data = await res.json();
+    try {
+      const res = await fetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          refresh_token: refreshToken,
+        }),
+      });
 
-    setTokens(data.access_token, data.refresh_token);
-    return true;
-  } catch {
-    return false;
-  }
+      if (!res.ok) {
+        clearTokens();
+        return false;
+      }
+
+      const data = await res.json();
+
+      setTokens(data.access_token, data.refresh_token);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      activeRefreshPromise = null;
+    }
+  })();
+
+  return activeRefreshPromise;
 }
 
 export async function publicFetch<T>(

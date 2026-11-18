@@ -98,13 +98,19 @@ export function OverviewPage() {
   const { data: servers, isLoading: serversLoading } = useServers();
   const [filter, setFilter] = useState<'ALL' | 'ONLINE' | 'SUSPECT' | 'OFFLINE'>('ALL');
   const [search, setSearch] = useState('');
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedIds, setCopiedIds] = useState<Record<string, boolean>>({});
   const [enrollOpen, setEnrollOpen] = useState(false);
 
   function copyText(text: string, id: string) {
     navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+    setCopiedIds((prev) => ({ ...prev, [id]: true }));
+    setTimeout(() => {
+      setCopiedIds((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+    }, 2000);
   }
 
   const filteredServers = (servers || []).filter((s) => {
@@ -252,7 +258,16 @@ export function OverviewPage() {
           </div>
           <div className="mt-4 pt-3 border-t border-border flex items-center justify-between text-xs text-muted font-mono">
             <span>Critical Failures</span>
-            <span className="text-healthy font-semibold">None Reported</span>
+            {(summary?.servers.offline ?? 0) > 0 || (summary?.incidents.critical ?? 0) > 0 ? (
+              <span className="text-critical font-semibold flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-critical animate-pulse" />
+                {(summary?.servers.offline ?? 0) > 0
+                  ? `${summary?.servers.offline} Offline`
+                  : `${summary?.incidents.critical} Critical`}
+              </span>
+            ) : (
+              <span className="text-healthy font-semibold">None Reported</span>
+            )}
           </div>
         </div>
       </div>
@@ -305,25 +320,25 @@ export function OverviewPage() {
           <table className="w-full text-left text-sm">
             <thead>
               <tr className="border-b border-border bg-background/50 text-[11px] font-mono text-muted uppercase tracking-wider">
-                <th className="px-6 py-3.5 font-semibold">Node Status</th>
-                <th className="px-6 py-3.5 font-semibold">Server & Hostname</th>
-                <th className="px-6 py-3.5 font-semibold">Platform</th>
-                <th className="px-6 py-3.5 font-semibold">
+                <th className="px-4 py-2.5 font-semibold">Node Status</th>
+                <th className="px-4 py-2.5 font-semibold">Server & Hostname</th>
+                <th className="px-4 py-2.5 font-semibold">Platform</th>
+                <th className="px-4 py-2.5 font-semibold">
                   <div className="flex items-center gap-1.5">
                     <Cpu size={13} /> CPU
                   </div>
                 </th>
-                <th className="px-6 py-3.5 font-semibold">
+                <th className="px-4 py-2.5 font-semibold">
                   <div className="flex items-center gap-1.5">
                     <CircuitBoard size={13} /> Memory
                   </div>
                 </th>
-                <th className="px-6 py-3.5 font-semibold">
+                <th className="px-4 py-2.5 font-semibold">
                   <div className="flex items-center gap-1.5">
                     <HardDrive size={13} /> Disk
                   </div>
                 </th>
-                <th className="px-6 py-3.5 font-semibold text-right">Action</th>
+                <th className="px-4 py-2.5 font-semibold text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60">
@@ -355,31 +370,31 @@ export function OverviewPage() {
                   className="hover:bg-surface-elevated/60 transition-colors duration-150 group"
                 >
                   {/* Status Pill */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2.5 whitespace-nowrap">
                     <StatusPill status={server.status} />
                   </td>
 
                   {/* Server Details */}
-                  <td className="px-6 py-4">
+                  <td className="px-4 py-2.5">
                     <div className="space-y-0.5">
                       <Link
                         to={`/servers/${server.id}`}
-                        className="font-semibold text-white hover:text-primary-light transition-colors flex items-center gap-1.5 group-hover:translate-x-0.5 transform duration-150"
+                        className="font-semibold text-white hover:text-primary-light transition-colors flex items-center gap-1.5 group-hover:translate-x-0.5 transform duration-150 text-xs"
                       >
                         <span>{server.name}</span>
-                        <ArrowUpRight size={13} className="text-muted group-hover:text-primary-light transition-colors" />
+                        <ArrowUpRight size={12} className="text-muted group-hover:text-primary-light transition-colors" />
                       </Link>
-                      <div className="flex items-center gap-2 text-xs text-muted font-mono">
+                      <div className="flex items-center gap-2 text-[11px] text-muted font-mono">
                         <span>{server.hostname}</span>
                         <button
                           onClick={() => copyText(server.hostname, server.id)}
                           title="Copy hostname"
                           className="text-text-dim hover:text-white transition-colors"
                         >
-                          {copiedId === server.id ? (
-                            <Check size={12} className="text-healthy" />
+                          {copiedIds[server.id] ? (
+                            <Check size={11} className="text-healthy" />
                           ) : (
-                            <Copy size={12} />
+                            <Copy size={11} />
                           )}
                         </button>
                       </div>
@@ -387,29 +402,29 @@ export function OverviewPage() {
                   </td>
 
                   {/* Platform */}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-xs px-2.5 py-1 rounded-lg bg-surface border border-border text-muted font-mono">
+                  <td className="px-4 py-2.5 whitespace-nowrap">
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-surface border border-border text-muted font-mono">
                       {server.platform}
                     </span>
                   </td>
 
                   {/* CPU Metric */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2.5 whitespace-nowrap">
                     <MetricBar value={server.cpu} />
                   </td>
 
                   {/* Memory Metric */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2.5 whitespace-nowrap">
                     <MetricBar value={server.memory} />
                   </td>
 
                   {/* Disk Metric */}
-                  <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-4 py-2.5 whitespace-nowrap">
                     <MetricBar value={server.disk} />
                   </td>
 
                   {/* Actions */}
-                  <td className="px-6 py-4 whitespace-nowrap text-right">
+                  <td className="px-4 py-2.5 whitespace-nowrap text-right">
                     <Link
                       to={`/servers/${server.id}`}
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface-highlight/70 hover:bg-primary hover:text-white text-xs text-muted font-medium border border-border hover:border-primary transition-all duration-150"

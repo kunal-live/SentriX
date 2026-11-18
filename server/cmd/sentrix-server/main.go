@@ -234,6 +234,7 @@ func main() {
 				r.Get("/agents", agents.HandleListAgents(pool))
 				r.Post("/agents/{agentID}/diagnostics", agents.HandleAgentDiagnostics(pool))
 				r.Post("/agents/{agentID}/rotate-credential", agents.HandleRotateCredential(pool))
+				r.Post("/agents/{agentID}/reactivate", agents.HandleReactivateAgent(pool))
 				r.Post("/agents/{agentID}/revoke", agents.HandleRevokeAgent(pool))
 
 				// Containers & Kubernetes
@@ -247,6 +248,7 @@ func main() {
 				r.Get("/runbooks/{id}", automation.HandleGetRunbook(pool))
 				r.Post("/runbooks/{id}/execute", automation.HandleExecuteRunbook(pool))
 				r.Get("/automation/executions", automation.HandleListExecutions(pool))
+				r.Post("/automation/executions/{execID}/approve", automation.HandleApproveExecution(pool))
 
 				// Integrations Hub & Dead Letter Queue (DLQ)
 				r.Get("/integrations", integrations.HandleListIntegrations(pool))

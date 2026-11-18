@@ -202,22 +202,32 @@ func HandleRotateCredential(pool *pgxpool.Pool) http.HandlerFunc {
 		newHash := hashToken(newCredential)
 
 		var agentName string
+		var currentStatus string
 
-		err = pool.QueryRow(r.Context(), `
-			UPDATE agents
-			SET
-				credential_hash = $2,
-				credential_rotated_at = NOW(),
-				status = 'ACTIVE',
-				revoked_at = NULL
-			WHERE id = $1
-			RETURNING name
-		`, agentID, newHash).Scan(&agentName)
-
+		err = pool.QueryRow(r.Context(), `SELECT name, status FROM agents WHERE id = $1`, agentID).Scan(&agentName, &currentStatus)
 		if err == pgx.ErrNoRows {
 			http.Error(w, "agent not found", http.StatusNotFound)
 			return
 		}
+		if err != nil {
+			http.Error(w, "database query failed", http.StatusInternalServerError)
+			return
+		}
+
+		if currentStatus == "REVOKED" {
+			http.Error(w, "cannot rotate credential for revoked agent; reactivate agent explicitly first", http.StatusConflict)
+			return
+		}
+
+		_, err = pool.Exec(r.Context(), `
+			UPDATE agents
+			SET
+				credential_hash = $2,
+				credential_rotated_at = NOW(),
+				updated_at = NOW()
+			WHERE id = $1
+			  AND status != 'REVOKED'
+		`, agentID, newHash)
 
 		if err != nil {
 			http.Error(w, "database update failed", http.StatusInternalServerError)
@@ -302,6 +312,76 @@ func HandleRevokeAgent(pool *pgxpool.Pool) http.HandlerFunc {
 		)
 
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// POST /api/v1/agents/{agentID}/reactivate
+func HandleReactivateAgent(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		agentID := chi.URLParam(r, "agentID")
+
+		if pool == nil {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]string{
+				"agent_id": agentID,
+				"status":   "ACTIVE",
+			})
+			return
+		}
+
+		var agentName string
+		err := pool.QueryRow(r.Context(), `
+			UPDATE agents
+			SET
+				status = 'ACTIVE',
+				revoked_at = NULL,
+				updated_at = NOW()
+			WHERE id = $1
+			  AND status = 'REVOKED'
+			RETURNING name
+		`, agentID).Scan(&agentName)
+
+		if err == pgx.ErrNoRows {
+			var currentStatus string
+			errCheck := pool.QueryRow(r.Context(), `SELECT status FROM agents WHERE id = $1`, agentID).Scan(&currentStatus)
+			if errCheck != nil {
+				http.Error(w, "agent not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "agent is not revoked (current status: "+currentStatus+")", http.StatusConflict)
+			return
+		}
+
+		if err != nil {
+			http.Error(w, "database update failed", http.StatusInternalServerError)
+			return
+		}
+
+		actor := auth.GetUser(r)
+		var actorID *string
+		if actor != nil {
+			actorID = &actor.ID
+		}
+
+		auth.WriteAudit(
+			r.Context(),
+			pool,
+			actorID,
+			"agent.reactivate",
+			"agent",
+			agentID,
+			auth.ClientIP(r),
+			map[string]any{
+				"agent_name": agentName,
+			},
+		)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{
+			"agent_id": agentID,
+			"status":   "ACTIVE",
+		})
 	}
 }
 

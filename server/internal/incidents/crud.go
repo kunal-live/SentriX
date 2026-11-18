@@ -167,6 +167,14 @@ func HandleUpdateIncident(pool *pgxpool.Pool) http.HandlerFunc {
 		if req.Title != nil {
 			_, _ = tx.Exec(ctx, `UPDATE incidents SET title = $2, updated_at = NOW() WHERE id = $1`, incidentID, *req.Title)
 		}
+		if req.Status != nil {
+			statusUpper := strings.ToUpper(strings.TrimSpace(*req.Status))
+			switch statusUpper {
+			case "OPEN", "ACKNOWLEDGED", "INVESTIGATING", "RESOLVED":
+				_, _ = tx.Exec(ctx, `UPDATE incidents SET status = $2, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper)
+				_ = WriteTimelineTx(ctx, tx, incidentID, &actor.ID, statusUpper, "Status transitioned to "+statusUpper+" by "+actor.Email)
+			}
+		}
 
 		if err := tx.Commit(ctx); err != nil {
 			api.RespondError(w, r, http.StatusInternalServerError, "DB_ERROR", "Commit failed")
@@ -201,13 +209,23 @@ func HandleInvestigate(pool *pgxpool.Pool) http.HandlerFunc {
 			UPDATE incidents
 			SET status = 'INVESTIGATING', updated_at = NOW()
 			WHERE id = $1
+			  AND status IN ('OPEN', 'ACKNOWLEDGED')
 			RETURNING server_id
 		`, incidentID).Scan(&serverID)
-		if err != nil {
-			if err == pgx.ErrNoRows {
+		if err == pgx.ErrNoRows {
+			var currentStatus string
+			errStatus := tx.QueryRow(ctx, `SELECT status FROM incidents WHERE id = $1`, incidentID).Scan(&currentStatus)
+			if errStatus != nil {
 				api.RespondError(w, r, http.StatusNotFound, "NOT_FOUND", "Incident not found")
 				return
 			}
+			if currentStatus == "INVESTIGATING" {
+				api.RespondJSON(w, http.StatusOK, map[string]string{"status": "INVESTIGATING"})
+				return
+			}
+			api.RespondError(w, r, http.StatusConflict, "INVALID_STATE", "Cannot transition to INVESTIGATING from "+currentStatus)
+			return
+		} else if err != nil {
 			api.RespondError(w, r, http.StatusInternalServerError, "DB_ERROR", "Update failed")
 			return
 		}

@@ -75,11 +75,15 @@ interface SilenceItem {
 function CustomTooltip({ active, payload }: any) {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
+    const date = new Date(data.time);
     return (
-      <div className="bg-surface-highlight border border-border p-3 rounded-xl shadow-xl space-y-1 font-mono text-xs">
-        <div className="text-text-dim">{new Date(data.time).toLocaleTimeString()}</div>
-        <div className="text-white font-bold flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: payload[0].color }} />
+      <div className="bg-surface border border-border p-3 rounded-xl shadow-2xl space-y-1.5 font-mono text-xs">
+        <div className="text-[10px] text-muted flex items-center justify-between gap-4">
+          <span>{date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+          <span className="text-white font-semibold">{date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+        </div>
+        <div className="text-white font-bold flex items-center gap-2 text-sm pt-0.5">
+          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: payload[0].color }} />
           <span>{data.value.toFixed(1)}%</span>
         </div>
       </div>
@@ -309,16 +313,20 @@ export function ServerDetailPage() {
           <div className="flex flex-wrap items-center gap-2.5 font-mono text-xs">
             <button
               onClick={() => setMaintenanceOpen(true)}
-              className="px-3.5 py-2 rounded-xl bg-surface border border-border hover:border-warning/50 text-muted hover:text-warning text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              className="px-3.5 py-2 rounded-xl bg-surface border border-border hover:border-warning/50 text-muted hover:text-warning text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
               title="Schedule planned maintenance window"
             >
               <Sliders size={13} />
               <span>Silence Alerts</span>
             </button>
+
+            {/* Visual separator to prevent accidental clicks */}
+            <div className="h-4 w-px bg-border/80 mx-1 hidden sm:block" />
+
             <button
               onClick={() => setDeleteConfirm(true)}
-              className="px-3.5 py-2 rounded-xl bg-critical/10 border border-critical/30 hover:bg-critical/20 text-critical text-xs font-mono flex items-center gap-1.5 transition-colors"
-              title="Decommission this server node"
+              className="px-3.5 py-2 rounded-xl bg-critical/5 border border-critical/20 hover:border-critical/40 hover:bg-critical/15 text-critical/80 hover:text-critical text-xs font-mono flex items-center gap-1.5 transition-colors"
+              title="Danger: Decommission this server node"
             >
               <Trash2 size={13} />
               <span>Decommission</span>

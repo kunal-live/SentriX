@@ -4,7 +4,7 @@ import {
   Shield, ShieldAlert, Key, Lock, Users, Laptop, Globe, AlertTriangle, 
   CheckCircle2, XCircle, RefreshCw, Clock, ExternalLink, Trash2
 } from 'lucide-react';
-import { MetricCard, EmptyState, LoadingState } from '../../components/ui/Primitives';
+import { MetricCard, EmptyState, LoadingState, ConfirmDialog } from '../../components/ui/Primitives';
 
 interface SecurityEvent {
   id: string;
@@ -67,11 +67,18 @@ export const SecurityCenterPage: React.FC = () => {
     fetchSecurityData();
   }, []);
 
-  const handleRevokeSession = async (id: string) => {
-    if (!confirm('Are you sure you want to force-revoke this authenticated session?')) return;
+  const [sessionToRevoke, setSessionToRevoke] = useState<string | null>(null);
+
+  const handleRevokeSession = (id: string) => {
+    setSessionToRevoke(id);
+  };
+
+  const confirmRevokeSession = async () => {
+    if (!sessionToRevoke) return;
     try {
-      setRevokingId(id);
-      await api.post(`/security/sessions/${id}/revoke`);
+      setRevokingId(sessionToRevoke);
+      await api.post(`/security/sessions/${sessionToRevoke}/revoke`);
+      setSessionToRevoke(null);
       fetchSecurityData();
     } catch (err: any) {
       alert('Failed to revoke session: ' + err.message);
@@ -294,6 +301,17 @@ export const SecurityCenterPage: React.FC = () => {
           ))}
         </div>
       )}
+      {/* Revoke Session Confirmation */}
+      <ConfirmDialog
+        isOpen={!!sessionToRevoke}
+        title="Revoke User Session?"
+        message="Are you sure you want to terminate this authenticated session? The user will be signed out immediately."
+        confirmText="Revoke Session"
+        confirmVariant="critical"
+        onConfirm={confirmRevokeSession}
+        onCancel={() => setSessionToRevoke(null)}
+        loading={!!revokingId}
+      />
     </div>
   );
 };

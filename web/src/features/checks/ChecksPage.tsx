@@ -1,5 +1,6 @@
 import { FormEvent, useState } from 'react';
 import { useServers } from '../../hooks/useDashboard';
+import { ConfirmDialog } from '../../components/ui/Primitives';
 import {
   CreateCheckInput,
   useChecks,
@@ -48,6 +49,7 @@ export function ChecksPage() {
   const [commandArgs, setCommandArgs] = useState('');
 
   const [error, setError] = useState<string | null>(null);
+  const [checkToDelete, setCheckToDelete] = useState<string | null>(null);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -94,9 +96,14 @@ export function ChecksPage() {
     }
   }
 
-  async function handleDelete(id: string) {
-    if (confirm('Delete this health check?')) {
-      await deleteCheck.mutateAsync(id);
+  function handleDelete(id: string) {
+    setCheckToDelete(id);
+  }
+
+  async function confirmDelete() {
+    if (checkToDelete) {
+      await deleteCheck.mutateAsync(checkToDelete);
+      setCheckToDelete(null);
     }
   }
 
@@ -308,7 +315,10 @@ export function ChecksPage() {
         {(checks || []).map((chk) => {
           const typeObj = checkTypes.find((t) => t.key === chk.type) || checkTypes[0];
           const TypeIcon = typeObj.icon;
-          const isHealthy = chk.state === 'HEALTHY';
+          const isFailing = chk.state === 'FAILING';
+          const isPending = chk.state === 'PENDING' || chk.state === 'DEGRADED';
+          const isHealthy = !isFailing && !isPending;
+          const displayState = isFailing ? 'FAILING' : isPending ? 'DEGRADED' : 'HEALTHY';
 
           return (
             <div
@@ -326,15 +336,21 @@ export function ChecksPage() {
                       className={`inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
                         isHealthy
                           ? 'bg-healthy/15 text-healthy border-healthy/30 shadow-glow-healthy'
+                          : isPending
+                          ? 'bg-warning/15 text-warning border-warning/30'
                           : 'bg-critical/15 text-critical border-critical/30'
                       }`}
                     >
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${
-                          isHealthy ? 'bg-healthy animate-pulse-glow' : 'bg-critical'
+                          isHealthy
+                            ? 'bg-healthy animate-pulse-glow'
+                            : isPending
+                            ? 'bg-warning'
+                            : 'bg-critical'
                         }`}
                       />
-                      {chk.state || 'HEALTHY'}
+                      {displayState}
                     </span>
                   </div>
 
@@ -380,6 +396,17 @@ export function ChecksPage() {
           );
         })}
       </div>
+
+      <ConfirmDialog
+        isOpen={!!checkToDelete}
+        title="Delete Health Check?"
+        message="Are you sure you want to remove this synthetic health check probe from the node?"
+        confirmText="Delete Probe"
+        confirmVariant="critical"
+        onConfirm={confirmDelete}
+        onCancel={() => setCheckToDelete(null)}
+        loading={deleteCheck.isPending}
+      />
     </div>
   );
 }

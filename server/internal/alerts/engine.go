@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/incidents"
+	"github.com/sentrix/server/internal/realtime"
 )
 
 type engineRule struct {
@@ -166,8 +168,18 @@ func processServerValue(ctx context.Context, pool *pgxpool.Pool, rule engineRule
 	breach := isBreached(value, rule)
 
 	if breach {
+		// Guard: If server or rule is currently silenced by a maintenance window, suppress transition
+		if IsSilenced(ctx, pool, serverID, rule.ID) {
+			slog.Info("alert silenced by active maintenance window", "rule", rule.Name, "server_id", serverID)
+			return
+		}
+
 		switch state {
 		case "OK", "RESOLVED":
+			// Guard: Respect cooldown window to prevent flapping back into PENDING
+			if cooldownUntil != nil && now.Before(*cooldownUntil) {
+				return
+			}
 			upsertState(ctx, pool, rule.ID, serverID, "PENDING", &now, value, nil, cooldownUntil)
 
 		case "PENDING":
@@ -374,11 +386,14 @@ func fireIncident(ctx context.Context, pool *pgxpool.Pool, rule engineRule, serv
 		"threshold", rule.Threshold,
 	)
 
+	realtime.PublishIncidentUpdated(incidentID.String(), serverID)
+
 	return incidentID.String()
 }
 
 func resolveIncident(ctx context.Context, pool *pgxpool.Pool, rule engineRule, serverID string) {
-	_, err := pool.Exec(ctx, `
+	var resolvedIncidentID string
+	err := pool.QueryRow(ctx, `
 		UPDATE incidents
 		SET
 			status = 'RESOLVED',
@@ -386,10 +401,17 @@ func resolveIncident(ctx context.Context, pool *pgxpool.Pool, rule engineRule, s
 		WHERE server_id = $1
 		  AND root_alert_id = $2
 		  AND status IN ('OPEN', 'ACKNOWLEDGED', 'INVESTIGATING')
-	`, serverID, rule.ID)
+		RETURNING id
+	`, serverID, rule.ID).Scan(&resolvedIncidentID)
 
-	if err != nil {
+	if err != nil && err != pgx.ErrNoRows {
 		slog.Error("alert engine failed to resolve incident", "error", err)
+		return
+	}
+
+	if err == nil {
+		_ = incidents.WriteTimelinePool(ctx, pool, resolvedIncidentID, nil, "RESOLVED", fmt.Sprintf("Alert condition normalized (value %.2f recovered below threshold). Automatically resolved by Alert Engine.", rule.Threshold))
+		realtime.PublishIncidentUpdated(resolvedIncidentID, serverID)
 	}
 
 	slog.Info("alert resolved",

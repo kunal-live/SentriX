@@ -4,7 +4,7 @@ import {
   Server, Shield, RefreshCw, Activity, Terminal, CheckCircle2, 
   AlertTriangle, XCircle, Clock, Zap, Cpu, HardDrive, Key, Play
 } from 'lucide-react';
-import { Badge, MetricCard, EmptyState, LoadingState } from '../../components/ui/Primitives';
+import { Badge, MetricCard, EmptyState, LoadingState, ConfirmDialog } from '../../components/ui/Primitives';
 
 interface AgentItem {
   id: string;
@@ -77,26 +77,62 @@ export const AgentsPage: React.FC = () => {
     }
   };
 
-  const handleRotateCredential = async (agentId: string) => {
-    if (!confirm(`Are you sure you want to rotate authentication credentials for agent ${agentId}?`)) return;
-    try {
-      const res = await api.post(`/agents/${agentId}/rotate-credential`);
-      setActionSuccess(`New credential generated for ${agentId}: ${res.data.credential}`);
-      fetchAgents();
-    } catch (err: any) {
-      alert('Credential rotation failed: ' + err.message);
-    }
+  const [confirmAction, setConfirmAction] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmText: string;
+    confirmVariant: 'critical' | 'warning' | 'primary';
+    action: () => Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    confirmVariant: 'critical',
+    action: async () => {},
+  });
+
+  const handleRotateCredential = (agentId: string) => {
+    setConfirmAction({
+      isOpen: true,
+      title: 'Rotate Agent Credentials?',
+      message: `Are you sure you want to rotate authentication credentials for agent ${agentId}? Active connections will be forced to renegotiate.`,
+      confirmText: 'Rotate Credential',
+      confirmVariant: 'warning',
+      action: async () => {
+        try {
+          const res = await api.post(`/agents/${agentId}/rotate-credential`);
+          setActionSuccess(`New credential generated for ${agentId}: ${res.data.credential}`);
+          fetchAgents();
+        } catch (err: any) {
+          setError('Credential rotation failed: ' + (err.response?.data?.error || err.message));
+        } finally {
+          setConfirmAction((prev) => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
   };
 
-  const handleRevokeAgent = async (agentId: string) => {
-    if (!confirm(`Are you sure you want to revoke agent ${agentId}? Telemetry ingestion will immediately halt.`)) return;
-    try {
-      await api.post(`/agents/${agentId}/revoke`);
-      setActionSuccess(`Agent ${agentId} revoked successfully`);
-      fetchAgents();
-    } catch (err: any) {
-      alert('Revocation failed: ' + err.message);
-    }
+  const handleRevokeAgent = (agentId: string) => {
+    setConfirmAction({
+      isOpen: true,
+      title: 'Revoke Node Agent?',
+      message: `Are you sure you want to permanently revoke agent ${agentId}? Telemetry ingestion and heartbeat reporting will immediately halt.`,
+      confirmText: 'Revoke Agent',
+      confirmVariant: 'critical',
+      action: async () => {
+        try {
+          await api.post(`/agents/${agentId}/revoke`);
+          setActionSuccess(`Agent ${agentId} revoked successfully`);
+          fetchAgents();
+        } catch (err: any) {
+          setError('Revocation failed: ' + (err.response?.data?.error || err.message));
+        } finally {
+          setConfirmAction((prev) => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
   };
 
   const handleCreateEnrollToken = async () => {
@@ -418,6 +454,16 @@ export const AgentsPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        isOpen={confirmAction.isOpen}
+        title={confirmAction.title}
+        message={confirmAction.message}
+        confirmText={confirmAction.confirmText}
+        confirmVariant={confirmAction.confirmVariant}
+        onConfirm={confirmAction.action}
+        onCancel={() => setConfirmAction((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 };

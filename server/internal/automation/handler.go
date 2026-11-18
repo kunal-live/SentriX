@@ -180,20 +180,43 @@ func HandleExecuteRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		var req struct {
+			Approved *bool `json:"approved"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+
 		now := time.Now().UTC()
+		isApproved := req.Approved != nil && *req.Approved
+
+		var status string
+		var completedAt *time.Time
+		var stepResults []string
+
+		if matched.RequiresApproval && !isApproved {
+			status = "PENDING_APPROVAL"
+			completedAt = nil
+			stepResults = []string{
+				"[Gate 1/1] Operator authorization required. Execution suspended in PENDING_APPROVAL state.",
+			}
+		} else {
+			status = "COMPLETED"
+			completedAt = &now
+			stepResults = []string{
+				"[Step 1] Initialized execution on target resources. Authorization check: APPROVED.",
+				"[Step 2] Executed safe parameterized action steps with zero errors.",
+				"[Step 3] Post-execution verification probe succeeded. Operational state normal.",
+			}
+		}
+
 		exec := &RunbookExecution{
 			ID:           "exec-" + uuid.New().String()[:8],
 			RunbookID:    matched.ID,
 			RunbookTitle: matched.Title,
 			TriggeredBy:  "admin@sentrix.local",
-			Status:       "COMPLETED",
+			Status:       status,
 			StartedAt:    now,
-			CompletedAt:  &now,
-			StepResults: []string{
-				"[Step 1] Initialized execution on target resources. Authorization check: APPROVED.",
-				"[Step 2] Executed safe parameterized action steps with zero errors.",
-				"[Step 3] Post-execution verification probe succeeded. Operational state normal.",
-			},
+			CompletedAt:  completedAt,
+			StepResults:  stepResults,
 		}
 
 		automationMu.Lock()
@@ -203,6 +226,36 @@ func HandleExecuteRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
 		json.NewEncoder(w).Encode(exec)
+	}
+}
+
+// POST /api/v1/automation/executions/{execID}/approve
+func HandleApproveExecution(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		execID := chi.URLParam(r, "execID")
+
+		automationMu.Lock()
+		defer automationMu.Unlock()
+
+		for _, ex := range executions {
+			if ex.ID == execID {
+				if ex.Status == "PENDING_APPROVAL" {
+					now := time.Now().UTC()
+					ex.Status = "COMPLETED"
+					ex.CompletedAt = &now
+					ex.StepResults = append(ex.StepResults,
+						"[Approval] Operator authorization granted. Proceeding with execution.",
+						"[Execution] Executed safe parameterized action steps with zero errors.",
+						"[Verification] Post-execution verification probe succeeded. Operational state normal.",
+					)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(ex)
+				return
+			}
+		}
+
+		http.Error(w, "execution not found", http.StatusNotFound)
 	}
 }
 

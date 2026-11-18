@@ -79,7 +79,7 @@ export function MaintenanceModal({
 
         {success ? (
           <div className="py-8 text-center space-y-3">
-            <CheckCircle2 size={40} className="mx-auto text-emerald-400 animate-bounce" />
+            <CheckCircle2 size={40} className="mx-auto text-emerald-400 drop-shadow-[0_0_12px_rgba(52,211,153,0.35)] transition-transform duration-300" />
             <p className="text-sm font-semibold text-white">Maintenance Mode Activated</p>
             <p className="text-xs text-muted">Alert notifications are now silenced for {durationMinutes} minutes.</p>
           </div>

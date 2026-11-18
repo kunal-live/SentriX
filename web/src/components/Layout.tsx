@@ -1,4 +1,4 @@
-import { ReactNode, useState } from 'react';
+import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -9,6 +9,7 @@ import {
   Radio,
   Search,
   ChevronRight,
+  ChevronDown,
   Shield,
   Layers,
   CheckCircle2,
@@ -38,53 +39,174 @@ import { useRealtime } from '../hooks/useRealtime';
 import { useDashboardSummary } from '../hooks/useDashboard';
 import { CommandPalette } from './ui/CommandPalette';
 
-const navItems = [
-  // OBSERVE
-  { path: '/', label: 'Fleet Overview', icon: LayoutDashboard, badge: null },
-  { path: '/dashboards', label: 'Custom Dashboards', icon: LayoutDashboard, badge: null },
-  { path: '/metrics', label: 'Metrics Explorer', icon: Activity, badge: null },
-  { path: '/logs', label: 'Central Logs', icon: FileText, badge: null },
-  { path: '/traces', label: 'Distributed Traces', icon: GitCommit, badge: null },
-  { path: '/services', label: 'Services Catalog', icon: Layers, badge: null },
-  { path: '/infrastructure', label: 'Infrastructure Fleet', icon: Server, badge: null },
-  { path: '/containers', label: 'Containers', icon: Box, badge: null },
-  { path: '/kubernetes', label: 'Kubernetes Fleet', icon: Network, badge: null },
-  { path: '/databases', label: 'Databases & Postgres', icon: Database, badge: null },
-  { path: '/network', label: 'Deep Network & TCP', icon: Network, badge: null },
+export interface NavItem {
+  path: string;
+  label: string;
+  icon: any;
+  badge?: 'incidents' | null;
+}
 
-  // RELIABILITY
-  { path: '/incidents', label: 'Incidents', icon: AlertTriangle, badge: 'incidents' },
-  { path: '/alerts', label: 'Alert Rules 2.0', icon: BellRing, badge: null },
-  { path: '/slos', label: 'SLOs & Reliability', icon: Target, badge: null },
-  { path: '/checks', label: 'Health Checks', icon: Activity, badge: null },
-  { path: '/runbooks', label: 'Runbooks & Automation', icon: Terminal, badge: null },
+export interface NavSection {
+  id: string;
+  title: string;
+  items: NavItem[];
+}
 
-  // ANALYZE & INTELLIGENCE
-  { path: '/service-map', label: 'Service Dependency Map', icon: Globe, badge: null },
-  { path: '/intelligence', label: 'Intelligence 2.0 RCA', icon: Sparkles, badge: null },
-  { path: '/deployments', label: 'Deployments & Changes', icon: Rocket, badge: null },
-  { path: '/capacity', label: 'Capacity & FinOps', icon: TrendingUp, badge: null },
-  { path: '/scale', label: 'HA & Scale Benchmarks', icon: Zap, badge: null },
-
-  // PLATFORM & ADMIN
-  { path: '/security', label: 'Security Center', icon: Shield, badge: null },
-  { path: '/organizations', label: 'Organizations & Teams', icon: Building2, badge: null },
-  { path: '/api-keys', label: 'Developer Platform', icon: Code, badge: null },
-  { path: '/billing', label: 'Plans & Metering', icon: CreditCard, badge: null },
-  { path: '/compliance', label: 'Compliance & DR', icon: ShieldCheck, badge: null },
-  { path: '/agents', label: 'Agent Fleet 2.0', icon: Terminal, badge: null },
-  { path: '/integrations', label: 'Integrations & DLQ', icon: Webhook, badge: null },
-  { path: '/users', label: 'Team & Access', icon: Users, badge: null },
-  { path: '/audit', label: 'Audit Logs', icon: ShieldCheck, badge: null },
+export const navSections: NavSection[] = [
+  {
+    id: 'observe',
+    title: 'Observability',
+    items: [
+      { path: '/', label: 'Fleet Overview', icon: LayoutDashboard },
+      { path: '/dashboards', label: 'Custom Dashboards', icon: LayoutDashboard },
+      { path: '/metrics', label: 'Metrics Explorer', icon: Activity },
+      { path: '/logs', label: 'Central Logs', icon: FileText },
+      { path: '/traces', label: 'Distributed Traces', icon: GitCommit },
+      { path: '/service-map', label: 'Service Dependency Map', icon: Globe },
+      { path: '/infrastructure', label: 'Infrastructure Fleet', icon: Server },
+      { path: '/containers', label: 'Containers', icon: Box },
+      { path: '/kubernetes', label: 'Kubernetes Fleet', icon: Network },
+      { path: '/databases', label: 'Databases & Postgres', icon: Database },
+      { path: '/network', label: 'Deep Network & TCP', icon: Network },
+    ],
+  },
+  {
+    id: 'reliability',
+    title: 'Reliability & SLOs',
+    items: [
+      { path: '/incidents', label: 'Incidents', icon: AlertTriangle, badge: 'incidents' },
+      { path: '/alerts', label: 'Alert Rules 2.0', icon: BellRing },
+      { path: '/slos', label: 'SLOs & Reliability', icon: Target },
+      { path: '/checks', label: 'Health Checks', icon: Activity },
+      { path: '/runbooks', label: 'Runbooks & Automation', icon: Terminal },
+    ],
+  },
+  {
+    id: 'intelligence',
+    title: 'Topology & AI',
+    items: [
+      { path: '/intelligence', label: 'Intelligence 2.0 RCA', icon: Sparkles },
+      { path: '/deployments', label: 'Deployments & Changes', icon: Rocket },
+      { path: '/services', label: 'Services Catalog', icon: Layers },
+      { path: '/capacity', label: 'Capacity & FinOps', icon: TrendingUp },
+      { path: '/scale', label: 'HA & Scale Benchmarks', icon: Zap },
+    ],
+  },
+  {
+    id: 'platform',
+    title: 'Platform & Fleet',
+    items: [
+      { path: '/agents', label: 'Agent Fleet 2.0', icon: Terminal },
+      { path: '/security', label: 'Security Center', icon: Shield },
+      { path: '/organizations', label: 'Organizations & Teams', icon: Building2 },
+      { path: '/integrations', label: 'Integrations & DLQ', icon: Webhook },
+      { path: '/api-keys', label: 'Developer Platform', icon: Code },
+      { path: '/billing', label: 'Plans & Metering', icon: CreditCard },
+      { path: '/compliance', label: 'Compliance & DR', icon: ShieldCheck },
+      { path: '/users', label: 'Team & Access', icon: Users },
+      { path: '/audit', label: 'Audit Logs', icon: ShieldCheck },
+    ],
+  },
 ];
+
+const navItems = navSections.flatMap((section) => section.items);
 
 export function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const wsStatus = useRealtime();
-  const { data: summary } = useDashboardSummary();
+  const { data: summary, isLoading: isSummaryLoading, isError: isSummaryError } = useDashboardSummary();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+
+  // Global keyboard shortcut to summon command palette anywhere
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  const toggleSection = (sectionId: string) => {
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [sectionId]: !prev[sectionId],
+    }));
+  };
+
+  const openIncidents = summary?.incidents?.open ?? 0;
+  const criticalIncidents = summary?.incidents?.critical ?? 0;
+  const offlineNodes = summary?.servers?.offline ?? 0;
+  const suspectNodes = summary?.servers?.suspect ?? 0;
+
+  let statusBadge = {
+    to: '/incidents',
+    bgColor: 'bg-healthy/10 hover:bg-healthy/15 border-healthy/30 text-healthy',
+    icon: CheckCircle2,
+    iconColor: 'text-healthy',
+    label: 'All Systems Nominal',
+    subtext: null as string | null,
+    pulse: false,
+  };
+
+  if (isSummaryError) {
+    statusBadge = {
+      to: '/overview',
+      bgColor: 'bg-critical/15 hover:bg-critical/25 border-critical/40 text-critical',
+      icon: AlertTriangle,
+      iconColor: 'text-critical',
+      label: 'Telemetry Offline',
+      subtext: 'API Error',
+      pulse: false,
+    };
+  } else if (isSummaryLoading && !summary) {
+    statusBadge = {
+      to: '/overview',
+      bgColor: 'bg-surface/80 hover:bg-surface border-border text-muted',
+      icon: Activity,
+      iconColor: 'text-muted animate-spin',
+      label: 'Checking Telemetry...',
+      subtext: null,
+      pulse: false,
+    };
+  } else if (openIncidents > 0 || criticalIncidents > 0) {
+    statusBadge = {
+      to: '/incidents',
+      bgColor: 'bg-critical/15 hover:bg-critical/25 border-critical/40 text-critical',
+      icon: AlertTriangle,
+      iconColor: 'text-critical',
+      label: criticalIncidents > 0
+        ? `${criticalIncidents} Critical Incident${criticalIncidents > 1 ? 's' : ''}`
+        : `${openIncidents} Active Incident${openIncidents > 1 ? 's' : ''}`,
+      subtext: 'Triage',
+      pulse: true,
+    };
+  } else if (offlineNodes > 0) {
+    statusBadge = {
+      to: '/overview',
+      bgColor: 'bg-critical/15 hover:bg-critical/25 border-critical/40 text-critical',
+      icon: AlertTriangle,
+      iconColor: 'text-critical',
+      label: `${offlineNodes} Node${offlineNodes > 1 ? 's' : ''} Offline`,
+      subtext: 'Fleet',
+      pulse: true,
+    };
+  } else if (suspectNodes > 0) {
+    statusBadge = {
+      to: '/overview',
+      bgColor: 'bg-warning/15 hover:bg-warning/25 border-warning/40 text-warning',
+      icon: AlertTriangle,
+      iconColor: 'text-warning',
+      label: `${suspectNodes} Node${suspectNodes > 1 ? 's' : ''} Suspect`,
+      subtext: 'Warning',
+      pulse: false,
+    };
+  }
 
   async function handleLogout() {
     await logout();
@@ -124,55 +246,91 @@ export function Layout({ children }: { children: ReactNode }) {
           </Link>
         </div>
 
-        {/* Navigation links */}
-        <div className="px-3 py-4 flex-1 space-y-6 overflow-y-auto">
-          <div>
-            <div className="px-3 mb-2 text-[10px] font-mono tracking-wider text-text-dim uppercase">
-              Core Modules
-            </div>
-            <nav className="space-y-1">
-              {navItems.map((item) => {
-                const isActive =
-                  item.path === '/'
-                    ? location.pathname === '/' || location.pathname.startsWith('/servers')
-                    : location.pathname.startsWith(item.path);
-                const Icon = item.icon;
-                const incidentCount = summary?.incidents?.open ?? 0;
+        {/* Hierarchical Navigation Sections */}
+        <div className="px-3 py-3 flex-1 space-y-4 overflow-y-auto">
+          {navSections.map((section) => {
+            const isCollapsed = !!collapsedSections[section.id];
+            const hasActiveChild = section.items.some((item) =>
+              item.path === '/'
+                ? location.pathname === '/' || location.pathname.startsWith('/servers')
+                : location.pathname.startsWith(item.path)
+            );
+            const sectionIncidentCount = section.items.some((i) => i.badge === 'incidents')
+              ? openIncidents
+              : 0;
 
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group relative ${
-                      isActive
-                        ? 'bg-gradient-to-r from-primary/25 to-primary/10 text-white border border-primary/30 shadow-glow-primary'
-                        : 'text-muted hover:text-white hover:bg-surface/80 hover:border hover:border-border'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`p-1.5 rounded-lg transition-colors ${
-                          isActive
-                            ? 'bg-primary text-white shadow-sm'
-                            : 'text-muted group-hover:text-white bg-surface-highlight/60'
+            return (
+              <div key={section.id} className="space-y-1">
+                {/* Section Header with Accordion Toggle */}
+                <button
+                  type="button"
+                  onClick={() => toggleSection(section.id)}
+                  className="w-full flex items-center justify-between px-2 py-1 text-[10px] font-mono font-bold uppercase tracking-wider text-muted/70 hover:text-white transition-colors group select-none"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <ChevronDown
+                      size={11}
+                      className={`text-muted/60 group-hover:text-white transition-transform duration-150 ${isCollapsed ? '-rotate-90' : 'rotate-0'
                         }`}
-                      >
-                        <Icon size={16} />
-                      </div>
-                      <span className="tracking-tight">{item.label}</span>
-                    </div>
+                    />
+                    <span className={hasActiveChild ? 'text-primary-light font-bold' : ''}>
+                      {section.title}
+                    </span>
+                  </span>
 
-                    {/* Dynamic badges */}
-                    {item.badge === 'incidents' && incidentCount > 0 && (
-                      <span className="text-[11px] font-mono font-bold px-1.5 py-0.5 rounded-full bg-critical/20 text-critical border border-critical/30 animate-pulse">
-                        {incidentCount}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
+                  {/* Section-level badge when collapsed with active incidents */}
+                  {isCollapsed && sectionIncidentCount > 0 && (
+                    <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-critical/20 text-critical border border-critical/30 animate-pulse">
+                      {sectionIncidentCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Section Links */}
+                {!isCollapsed && (
+                  <nav className="space-y-0.5 pt-0.5">
+                    {section.items.map((item) => {
+                      const isActive =
+                        item.path === '/'
+                          ? location.pathname === '/' || location.pathname.startsWith('/servers')
+                          : location.pathname.startsWith(item.path);
+                      const Icon = item.icon;
+
+                      return (
+                        <Link
+                          key={item.path}
+                          to={item.path}
+                          className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all group relative ${isActive
+                              ? 'bg-primary/20 text-white font-semibold border border-primary/35 shadow-sm'
+                              : 'text-slate-400 hover:text-white hover:bg-surface/80 hover:border hover:border-border/60'
+                            }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div
+                              className={`p-1 rounded-md transition-colors shrink-0 ${isActive
+                                  ? 'bg-primary text-white shadow-sm'
+                                  : 'text-muted group-hover:text-white bg-surface-highlight/50'
+                                }`}
+                            >
+                              <Icon size={14} />
+                            </div>
+                            <span className="truncate tracking-tight">{item.label}</span>
+                          </div>
+
+                          {/* Dynamic badges */}
+                          {item.badge === 'incidents' && openIncidents > 0 && (
+                            <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded-full bg-critical/20 text-critical border border-critical/30 animate-pulse ml-2 shrink-0">
+                              {openIncidents}
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </nav>
+                )}
+              </div>
+            );
+          })}
 
           {/* Quick Metrics Glance in Sidebar */}
           <div className="px-3 pt-2">
@@ -189,21 +347,19 @@ export function Layout({ children }: { children: ReactNode }) {
                 <div
                   className="bg-healthy h-full transition-all duration-500"
                   style={{
-                    width: `${
-                      summary?.servers.total
+                    width: `${summary?.servers.total
                         ? ((summary.servers.online) / summary.servers.total) * 100
                         : 0
-                    }%`,
+                      }%`,
                   }}
                 />
                 <div
                   className="bg-warning h-full transition-all duration-500"
                   style={{
-                    width: `${
-                      summary?.servers.total
+                    width: `${summary?.servers.total
                         ? (summary.servers.suspect / summary.servers.total) * 100
                         : 0
-                    }%`,
+                      }%`,
                   }}
                 />
               </div>
@@ -224,11 +380,10 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-surface/50 border border-border">
             <div className="flex items-center gap-2 text-xs">
               <span
-                className={`w-2 h-2 rounded-full ${
-                  wsStatus === 'connected'
+                className={`w-2 h-2 rounded-full ${wsStatus === 'connected'
                     ? 'bg-healthy animate-pulse-glow shadow-glow-healthy'
                     : 'bg-warning'
-                }`}
+                  }`}
               />
               <span className="text-muted font-mono text-[11px]">
                 {wsStatus === 'connected' ? 'WS STREAM' : 'POLLING'}
@@ -308,19 +463,54 @@ export function Layout({ children }: { children: ReactNode }) {
           </div>
 
           {/* Right Live indicators & actions */}
-          <div className="flex items-center gap-3">
-            {/* Live Streaming Pill */}
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface/80 border border-border text-[11px] font-mono text-muted">
-              <Radio size={12} className="text-healthy animate-pulse" />
-              <span className="text-white font-medium">Real-Time Ingestion</span>
-              <span className="text-healthy">• 5s</span>
-            </div>
+          <div className="flex items-center gap-2.5">
+            {/* Live Streaming Status Pill */}
+            {wsStatus === 'connected' ? (
+              <div
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface/80 border border-border text-[11px] font-mono text-muted shadow-sm"
+                title="Connected to SentriX streaming ingestion gateway"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-healthy animate-pulse" />
+                <span className="text-white font-medium">Real-Time</span>
+                <span className="text-healthy text-[10px]">WS Live</span>
+              </div>
+            ) : wsStatus === 'connecting' ? (
+              <div
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface/80 border border-border text-[11px] font-mono text-muted shadow-sm"
+                title="Connecting to streaming gateway..."
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
+                <span className="text-white font-medium">Reconnecting</span>
+                <span className="text-warning text-[10px]">WS</span>
+              </div>
+            ) : (
+              <div
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface/80 border border-border text-[11px] font-mono text-muted shadow-sm"
+                title="WebSocket disconnected; falling back to 5s active polling"
+              >
+                <Radio size={12} className="text-muted" />
+                <span className="text-white font-medium">Polling</span>
+                <span className="text-muted text-[10px]">5s</span>
+              </div>
+            )}
 
-            {/* Quick status button */}
-            <div className="flex items-center gap-1 text-xs text-healthy font-mono bg-healthy/10 px-2.5 py-1 rounded-full border border-healthy/20">
-              <CheckCircle2 size={13} />
-              <span>All Systems Nominal</span>
-            </div>
+            {/* Reactive System Status Badge */}
+            <Link
+              to={statusBadge.to}
+              title={`System Status: ${statusBadge.label}. Click to investigate.`}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-semibold border transition-all shadow-sm ${statusBadge.bgColor}`}
+            >
+              <statusBadge.icon
+                size={13}
+                className={`${statusBadge.iconColor} ${statusBadge.pulse ? 'animate-pulse' : ''}`}
+              />
+              <span className="tracking-tight">{statusBadge.label}</span>
+              {statusBadge.subtext && (
+                <span className="text-[10px] uppercase tracking-wider px-1 py-0.2 rounded bg-black/30 opacity-90">
+                  {statusBadge.subtext}
+                </span>
+              )}
+            </Link>
           </div>
         </header>
 

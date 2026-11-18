@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include "collector.h"
 #include "checks.h"
+#include "buffer.h"
 
 extern void build_telemetry_json(char *buffer, size_t size, const char *agent_id, uint64_t seq, const SystemMetrics *m);
 extern int send_telemetry(const char *host, int port, const char *path, const char *json_payload, const char *auth_token);
@@ -149,6 +150,11 @@ int main(int argc, char *argv[]) {
     printf("Target Server: %s:%d\n", config.server_host, config.server_port);
     printf("Agent ID:      %s\n", config.agent_id);
 
+    DiskBuffer spool_buf;
+    if (buffer_init(&spool_buf, "sentrix_spool.bin", 0) == 0) {
+        printf("Initialized local disk spool buffer (%d records queued).\n", spool_buf.items_queued);
+    }
+
     uint64_t sequence = 1;
     char json_buffer[2048];
     SystemMetrics metrics;
@@ -165,10 +171,34 @@ int main(int argc, char *argv[]) {
 
         build_telemetry_json(json_buffer, sizeof(json_buffer), config.agent_id, sequence, &metrics);
 
+        // 1. Drain offline spool buffer if connected
+        while (spool_buf.items_queued > 0) {
+            char spooled_json[4096];
+            size_t spooled_len = 0;
+            if (buffer_peek(&spool_buf, spooled_json, sizeof(spooled_json), &spooled_len) == 0) {
+                if (send_telemetry(config.server_host, config.server_port, "/api/v1/agent/telemetry", spooled_json, config.auth_token) == 0) {
+                    printf("[Spool] Drained queued metric frame (%d remaining)\n", spool_buf.items_queued - 1);
+                    buffer_pop(&spool_buf);
+                } else {
+                    printf("[Spool] Connection not ready to drain queue. Retrying next cycle.\n");
+                    break;
+                }
+            } else {
+                buffer_pop(&spool_buf); // corrupted record, discard
+            }
+        }
+
+        // 2. Transmit current telemetry frame or buffer on network partition
         if (send_telemetry(config.server_host, config.server_port, "/api/v1/agent/telemetry", json_buffer, config.auth_token) == 0) {
             printf("Telemetry sent successfully.\n");
         } else {
-            printf("Telemetry dispatch failed. Will retry next interval.\n");
+            printf("Telemetry dispatch failed. Spooling frame to local buffer...\n");
+            if (buffer_push(&spool_buf, json_buffer, strlen(json_buffer)) == 0) {
+                printf("[Spool] Frame spooled successfully (%d items in queue, %zu bytes).\n",
+                       spool_buf.items_queued, spool_buf.current_bytes);
+            } else {
+                printf("[Spool] Warning: Failed to buffer telemetry to disk.\n");
+            }
         }
 
         // Execute synthetic checks cycle every 3 intervals (30 seconds)

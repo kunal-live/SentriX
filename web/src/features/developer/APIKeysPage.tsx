@@ -4,7 +4,7 @@ import {
   Key, Code, Copy, Check, Trash2, Plus, Shield, RefreshCw, 
   Terminal, FileText, CheckCircle2, Lock, ExternalLink
 } from 'lucide-react';
-import { MetricCard, EmptyState, LoadingState } from '../../components/ui/Primitives';
+import { MetricCard, EmptyState, LoadingState, ConfirmDialog } from '../../components/ui/Primitives';
 
 interface APIKeyItem {
   id: string;
@@ -64,10 +64,17 @@ export const APIKeysPage: React.FC = () => {
     }
   };
 
-  const handleRevokeKey = async (id: string) => {
-    if (!confirm('Are you sure you want to permanently revoke this API key?')) return;
+  const [keyToRevoke, setKeyToRevoke] = useState<string | null>(null);
+
+  const handleRevokeKey = (id: string) => {
+    setKeyToRevoke(id);
+  };
+
+  const confirmRevokeKey = async () => {
+    if (!keyToRevoke) return;
     try {
-      await api.delete(`/api-keys/${id}`);
+      await api.delete(`/api-keys/${keyToRevoke}`);
+      setKeyToRevoke(null);
       fetchKeys();
     } catch (err: any) {
       alert('Failed to revoke key: ' + err.message);
@@ -348,6 +355,16 @@ export const APIKeysPage: React.FC = () => {
           </div>
         </div>
       )}
+      {/* Revoke Confirmation Modal */}
+      <ConfirmDialog
+        isOpen={!!keyToRevoke}
+        title="Revoke API Token?"
+        message="Are you sure you want to permanently revoke this API key? Pipelines and automation scripts using this token will fail immediately."
+        confirmText="Revoke Token"
+        confirmVariant="critical"
+        onConfirm={confirmRevokeKey}
+        onCancel={() => setKeyToRevoke(null)}
+      />
     </div>
   );
 };

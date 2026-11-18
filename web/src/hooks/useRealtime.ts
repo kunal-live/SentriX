@@ -69,10 +69,23 @@ export function useRealtime(): RealtimeStatus {
       }
     }
 
+    function scheduleReconnect() {
+      if (disposed) return;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
+      setStatus('disconnected');
+      const delay = Math.min(1000 * 2 ** attempts, 15000);
+      attempts += 1;
+      reconnectTimer = setTimeout(connect, delay);
+    }
+
     async function connect() {
       if (disposed) {
         return;
       }
+
+      setStatus('connecting');
 
       try {
         const ticketResponse = await mutateJSON<WsTicketResponse>(
@@ -80,11 +93,12 @@ export function useRealtime(): RealtimeStatus {
           'POST'
         );
 
+        if (disposed) {
+          return;
+        }
+
         const url = `${WS_URL}?ticket=${encodeURIComponent(ticketResponse.ticket)}`;
-
         ws = new WebSocket(url);
-
-        setStatus('connecting');
 
         ws.onopen = () => {
           if (disposed) {
@@ -108,29 +122,17 @@ export function useRealtime(): RealtimeStatus {
           if (disposed) {
             return;
           }
-
-          setStatus('disconnected');
-
-          const delay = Math.min(1000 * 2 ** attempts, 15000);
-          attempts += 1;
-
-          reconnectTimer = setTimeout(connect, delay);
+          scheduleReconnect();
         };
 
         ws.onerror = () => {
-          ws?.close();
+          // WebSocket specification triggers onclose automatically upon transport error
         };
       } catch {
         if (disposed) {
           return;
         }
-
-        setStatus('disconnected');
-
-        const delay = Math.min(1000 * 2 ** attempts, 15000);
-        attempts += 1;
-
-        reconnectTimer = setTimeout(connect, delay);
+        scheduleReconnect();
       }
     }
 

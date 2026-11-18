@@ -1578,6 +1578,7 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		r.Get("/agents", agents.HandleListAgents(nil))
 		r.Post("/agents/{agentID}/diagnostics", agents.HandleAgentDiagnostics(nil))
 		r.Post("/agents/{agentID}/rotate-credential", agents.HandleRotateCredential(nil))
+		r.Post("/agents/{agentID}/reactivate", agents.HandleReactivateAgent(nil))
 		r.Post("/agents/{agentID}/revoke", agents.HandleRevokeAgent(nil))
 
 		// Containers & Kubernetes
@@ -1595,6 +1596,7 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		r.Get("/runbooks/{id}", automation.HandleGetRunbook(nil))
 		r.Post("/runbooks/{id}/execute", automation.HandleExecuteRunbook(nil))
 		r.Get("/automation/executions", automation.HandleListExecutions(nil))
+		r.Post("/automation/executions/{execID}/approve", automation.HandleApproveExecution(nil))
 
 		// Integrations Hub & Dead Letter Queue (DLQ)
 		r.Get("/integrations", integrations.HandleListIntegrations(nil))

@@ -314,7 +314,7 @@ func HandleAcknowledge(pool *pgxpool.Pool) http.HandlerFunc {
 				acknowledged_at = NOW(),
 				acknowledged_by = $2
 			WHERE id = $1
-			  AND status = 'OPEN'
+			  AND status IN ('OPEN', 'INVESTIGATING')
 			RETURNING server_id, title
 		`, incidentID, actor.ID).Scan(&serverID, &title)
 
