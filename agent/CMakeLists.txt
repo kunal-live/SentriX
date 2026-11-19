@@ -13,6 +13,7 @@ endif()
 set(SOURCES
     src/main.c
     src/core/transport.c
+    src/core/buffer.c
     src/core/checks.c
     src/core/cJSON.c
     src/platform/linux/cpu.c
