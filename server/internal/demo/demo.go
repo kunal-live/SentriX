@@ -19,7 +19,6 @@ import (
 	"github.com/sentrix/server/internal/alerts"
 	"github.com/sentrix/server/internal/auth"
 	"github.com/sentrix/server/internal/automation"
-	"github.com/sentrix/server/internal/billing"
 	"github.com/sentrix/server/internal/capacity"
 	"github.com/sentrix/server/internal/compliance"
 	"github.com/sentrix/server/internal/containers"
@@ -1888,11 +1887,6 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		// Phase 21: Advanced Database & Network Diagnostics
 		r.Get("/databases/postgres", databases.HandleGetPostgresDiagnostics(nil))
 		r.Get("/network/diagnostics", network.HandleGetNetworkDiagnostics(nil))
-
-		// Phase 22: SaaS Control Plane, Plans & Usage Metering
-		r.Get("/billing/plans", billing.HandleListPlans(nil))
-		r.Get("/billing/usage", billing.HandleGetUsage(nil))
-		r.Post("/billing/subscribe", billing.HandleSubscribe(nil))
 
 		// Phase 23: Compliance, Disaster Recovery & SBOM
 		r.Get("/compliance/frameworks", compliance.HandleListFrameworks(nil))

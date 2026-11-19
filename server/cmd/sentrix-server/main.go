@@ -21,7 +21,6 @@ import (
 	"github.com/sentrix/server/internal/api"
 	"github.com/sentrix/server/internal/auth"
 	"github.com/sentrix/server/internal/automation"
-	"github.com/sentrix/server/internal/billing"
 	"github.com/sentrix/server/internal/capacity"
 	"github.com/sentrix/server/internal/checks"
 	"github.com/sentrix/server/internal/compliance"
@@ -310,11 +309,6 @@ func main() {
 				// Phase 21: Advanced Database & Network Diagnostics
 				r.Get("/databases/postgres", databases.HandleGetPostgresDiagnostics(pool))
 				r.Get("/network/diagnostics", network.HandleGetNetworkDiagnostics(pool))
-
-				// Phase 22: SaaS Control Plane, Plans & Usage Metering
-				r.Get("/billing/plans", billing.HandleListPlans(pool))
-				r.Get("/billing/usage", billing.HandleGetUsage(pool))
-				r.Post("/billing/subscribe", billing.HandleSubscribe(pool))
 
 				// Phase 23: Compliance, Disaster Recovery & SBOM
 				r.Get("/compliance/frameworks", compliance.HandleListFrameworks(pool))

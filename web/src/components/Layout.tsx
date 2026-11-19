@@ -30,7 +30,6 @@ import {
   Code,
   TrendingUp,
   Database,
-  CreditCard,
   Sparkles,
   Zap,
 } from 'lucide-react';
@@ -101,7 +100,6 @@ export const navSections: NavSection[] = [
       { path: '/organizations', label: 'Organizations & Teams', icon: Building2 },
       { path: '/integrations', label: 'Integrations & DLQ', icon: Webhook },
       { path: '/api-keys', label: 'Developer Platform', icon: Code },
-      { path: '/billing', label: 'Plans & Metering', icon: CreditCard },
       { path: '/compliance', label: 'Compliance & DR', icon: ShieldCheck },
       { path: '/users', label: 'Team & Access', icon: Users },
       { path: '/audit', label: 'Audit Logs', icon: ShieldCheck },

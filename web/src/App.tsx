@@ -1,5 +1,5 @@
 import { ReactNode } from 'react';
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Route, Routes, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { Layout } from './components/Layout';
@@ -34,7 +34,6 @@ import { ScaleBenchmarksPage } from './features/scale/ScaleBenchmarksPage';
 import { CapacityFinOpsPage } from './features/capacity/CapacityFinOpsPage';
 import { DatabasesPage } from './features/databases/DatabasesPage';
 import { NetworkPage } from './features/network/NetworkPage';
-import { BillingPlansPage } from './features/billing/BillingPlansPage';
 import { CompliancePage } from './features/compliance/CompliancePage';
 import { IntelligencePage } from './features/intelligence/IntelligencePage';
 import { LoginPage } from './features/auth/LoginPage';
@@ -427,27 +426,8 @@ function App() {
               }
             />
 
-            <Route
-              path="/billing"
-              element={
-                <Protected>
-                  <Layout>
-                    <BillingPlansPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/plans"
-              element={
-                <Protected>
-                  <Layout>
-                    <BillingPlansPage />
-                  </Layout>
-                </Protected>
-              }
-            />
+            <Route path="/billing" element={<Navigate to="/" replace />} />
+            <Route path="/plans" element={<Navigate to="/" replace />} />
 
             <Route
               path="/compliance"

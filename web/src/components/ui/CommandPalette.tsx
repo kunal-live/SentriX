@@ -29,7 +29,6 @@ import {
   Code,
   TrendingUp,
   Database,
-  CreditCard,
   Zap,
   Shield,
 } from 'lucide-react';
@@ -282,14 +281,6 @@ export function CommandPalette({
       icon: Code,
       action: () => navigate('/api-keys'),
       shortcut: 'G A P',
-    },
-    {
-      id: 'nav-billing',
-      title: 'SaaS Control Plane & Plan Management',
-      category: 'Navigation',
-      icon: CreditCard,
-      action: () => navigate('/billing'),
-      shortcut: 'G B I',
     },
     {
       id: 'nav-compliance',
