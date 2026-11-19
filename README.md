@@ -85,16 +85,18 @@ cd web
 npm install
 npm run build
 
-# 2. Build and run the server
+# 2. Build and run the server in demo mode
 cd ../server
 go build -o ../dist/sentrix-server.exe ./cmd/sentrix-server
 cd ../dist
-./sentrix-server.exe
+SENTRIX_DEMO_MODE=true ./sentrix-server.exe
 ```
 
 Access the dashboard at **[http://localhost:8080](http://localhost:8080)**:
-- **Default User**: `admin@sentrix.local`
-- **Default Password**: `admin12345`
+- **Demo User**: `admin@sentrix.local`
+- **Demo Password**: `admin12345` (only enabled in standalone demo mode)
+
+> **Production Security Note**: When connecting to a persistent database in production, SentriX generates a cryptographically secure 20-character random password on first run and outputs it to the server logs (or uses `SENTRIX_ADMIN_PASSWORD`). Change the administrator password immediately upon first login. Brute-force protection and IP rate limiting are active by default on `/api/v1/auth/login`.
 
 ---
 
@@ -107,7 +109,10 @@ Deploy the entire observability suite with TimescaleDB containerized:
 git clone https://github.com/kunal-gin/SentriX.git
 cd SentriX
 
-# Launch TimescaleDB and database migrations
+# Copy example environment configuration and generate secure secrets
+cp .env.example .env
+
+# Launch TimescaleDB with internal networking (PostgreSQL port is bound to 127.0.0.1)
 docker compose -f deploy/compose/docker-compose.yml up -d
 
 # Start SentriX backend and web dashboard
@@ -119,14 +124,21 @@ go run ./cmd/sentrix-server
 
 ## 💻 Native C Agent Installation
 
-### Quick 1-Click Enrollment (via Web UI)
+### Secure Fleet Node Enrollment
 1. Navigate to the **Fleet Overview** in the dashboard.
 2. Click **"Enroll Node"**.
-3. Copy the pre-configured single-use installation snippet and paste it into your target Linux terminal:
+3. Generate a single-use, 24-hour cryptographically hashed enrollment token.
+4. Execute the enrollment command over HTTPS with certificate verification:
 
 ```bash
-curl -sSL http://<your-sentrix-host>:8080/install.sh | \
-  sudo bash -s -- --token <ENROLLMENT_TOKEN> --server http://<your-sentrix-host>:8080
+# Download and install agent binary
+sudo ./scripts/install-agent.sh /path/to/sentrix-agent
+
+# Enroll the node with single-use token over HTTPS
+sudo ./scripts/enroll-agent.sh <your-sentrix-host> 443 <ENROLLMENT_TOKEN> 1.0.0
+
+# Start and enable the agent service (runs non-root with 0600 config)
+sudo systemctl enable --now sentrix-agent
 ```
 
 ### Manual Compilation on Linux

@@ -31,8 +31,8 @@ install -m 0755 "$BINARY" /opt/sentrix/bin/sentrix-agent
 
 if [[ ! -f /etc/sentrix/agent.env ]]; then
   echo "Installing example agent environment file..."
-  install -m 0640 deploy/agent/agent.env.example /etc/sentrix/agent.env
-  chown root:sentrix /etc/sentrix/agent.env
+  install -m 0600 deploy/agent/agent.env.example /etc/sentrix/agent.env
+  chown root:sentrix /etc/sentrix/agent.env 2>/dev/null || chown root:root /etc/sentrix/agent.env
 fi
 
 echo "Installing systemd unit..."

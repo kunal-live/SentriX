@@ -139,7 +139,7 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		// Replay / duplicate protection.
+		// Replay / duplicate / sequence verification.
 		if payload.Sequence <= lastSequence {
 			// Exact duplicate is accepted idempotently but not reprocessed.
 			if payload.Sequence == lastSequence &&
@@ -151,10 +151,9 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 				return
 			}
 
-			// Allow agent restart sequence reset only when moving forward in time.
-			allowReset := payload.Sequence == 1 &&
-				lastTelemetryAt != nil &&
-				payload.Timestamp.After(*lastTelemetryAt)
+			// Allow agent restart sequence reset when moving forward in time.
+			// Agents reset sequence on startup (1, 2, ...); allow reset if time advanced.
+			allowReset := (lastTelemetryAt == nil) || (payload.Timestamp.After(*lastTelemetryAt) && payload.Sequence <= 10)
 
 			if !allowReset {
 				selfmetrics.Global().IngestFailures.Add(1)

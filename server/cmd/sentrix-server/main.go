@@ -113,6 +113,19 @@ func main() {
 		defer pool.Close()
 	}
 
+	demoRequested := os.Getenv("SENTRIX_DEMO_MODE") == "true"
+	for _, arg := range os.Args[1:] {
+		if arg == "--demo" {
+			demoRequested = true
+		}
+	}
+
+	if !isDBLive && !demoRequested {
+		slog.Error("FATAL: Failed to connect to database and demo mode was not requested.", "db_url", dbURL)
+		slog.Error("To run in-memory fleet simulation explicitly, set SENTRIX_DEMO_MODE=true or pass --demo flag.")
+		os.Exit(1)
+	}
+
 	r := chi.NewRouter()
 	r.Use(api.RequestIDMiddleware)
 	r.Use(middleware.Logger)
@@ -151,13 +164,16 @@ func main() {
 		r.Route("/api/v1", func(r chi.Router) {
 			// Public auth routes
 			r.Route("/auth", func(r chi.Router) {
-				r.Post("/login", auth.HandleLogin(pool))
+				loginLimiter := security.NewRateLimiter(5, 10)
+				r.With(security.HTTPRateLimit(loginLimiter, security.IPKey, "Too many login attempts; please slow down")).Post("/login", auth.HandleLogin(pool))
 				r.Post("/refresh", auth.HandleRefresh(pool))
 				r.Post("/logout", auth.HandleLogout(pool))
 
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireAuth)
 					r.Get("/me", auth.HandleMe())
+					r.Post("/password", auth.HandleChangePassword(pool))
+					r.Post("/change-password", auth.HandleChangePassword(pool))
 				})
 			})
 
@@ -314,11 +330,10 @@ func main() {
 				r.Post("/realtime/ticket", realtime.HandleIssueTicket(ticketStore))
 				r.Post("/auth/ws-ticket", realtime.HandleIssueTicket(ticketStore))
 
-				// Operator + Admin: alert & node management
+				// Operator + Admin: alert rules & silences
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireRole("ADMIN", "OPERATOR"))
 
-					r.Delete("/servers/{serverID}", servers.HandleDeleteServer(pool))
 					r.Post("/alerts/rules", alerts.HandleCreateRule(pool))
 					r.Patch("/alerts/rules/{ruleID}", alerts.HandleUpdateRule(pool))
 					r.Delete("/alerts/rules/{ruleID}", alerts.HandleDeleteRule(pool))
@@ -328,18 +343,23 @@ func main() {
 					r.Get("/audit-logs", auth.HandleGetAuditLogs(pool))
 				})
 
-				// Admin only
+				// Admin only: server deletion, user management, enrollment tokens, channels
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireRole("ADMIN"))
 
+					r.Delete("/servers/{serverID}", servers.HandleDeleteServer(pool))
+
 					r.Get("/users", auth.HandleListUsers(pool))
 					r.Post("/users", auth.HandleCreateUser(pool))
+					r.Post("/users/invite", auth.HandleCreateUser(pool))
 
 					r.Post("/agents/enrollment-tokens", agents.HandleCreateEnrollmentToken(pool))
 					r.Get("/agents/enrollment-tokens", agents.HandleListEnrollmentTokens(pool))
 
 					r.Post("/notifications/channels", notifications.HandleCreateChannel(pool))
 					r.Delete("/notifications/channels/{channelID}", notifications.HandleDeleteChannel(pool))
+					r.Post("/notifications/channels/{channelID}/test", notifications.HandleTestChannel(pool))
+					r.Post("/notifications/channels/test", notifications.HandleTestChannel(pool))
 
 					r.Get("/notifications/jobs", notifications.HandleListJobs(pool))
 				})

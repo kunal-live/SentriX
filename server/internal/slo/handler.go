@@ -16,19 +16,19 @@ type SLOEntity struct {
 	ID                     string    `json:"id"`
 	Name                   string    `json:"name"`
 	Service                string    `json:"service"`
-	Target                 float64   `json:"target_percent"`         // e.g. 99.95
-	Current                float64   `json:"current_percent"`        // e.g. 99.98
-	TimeWindow             string    `json:"time_window"`            // 30d, 7d
-	ErrorBudgetMin         float64   `json:"error_budget_minutes"`   // allowed downtime minutes
-	ConsumedMin            float64   `json:"consumed_minutes"`       // actual consumed downtime
+	Target                 float64   `json:"target_percent"`           // e.g. 99.95
+	Current                float64   `json:"current_percent"`          // e.g. 99.98
+	TimeWindow             string    `json:"time_window"`              // 30d, 7d
+	ErrorBudgetMin         float64   `json:"error_budget_minutes"`     // allowed downtime minutes
+	ConsumedMin            float64   `json:"consumed_minutes"`         // actual consumed downtime
 	RemainingBudgetPercent float64   `json:"remaining_budget_percent"` // 0-100%
-	BurnRate               float64   `json:"burn_rate"`              // 1.0x nominal
-	BurnRate1h             float64   `json:"burn_rate_1h"`           // 1h window (14.4x fast burn trigger)
-	BurnRate6h             float64   `json:"burn_rate_6h"`           // 6h window (6.0x slow burn trigger)
-	Status                 string    `json:"status"`                 // HEALTHY, AT_RISK, BREACHED
+	BurnRate               float64   `json:"burn_rate"`                // 1.0x nominal
+	BurnRate1h             float64   `json:"burn_rate_1h"`             // 1h window (14.4x fast burn trigger)
+	BurnRate6h             float64   `json:"burn_rate_6h"`             // 6h window (6.0x slow burn trigger)
+	Status                 string    `json:"status"`                   // HEALTHY, AT_RISK, BREACHED
 	BurnAlertTriggered     bool      `json:"burn_alert_triggered"`
-	BurnAlertType          string    `json:"burn_alert_type"`        // NONE, FAST_BURN_14X, SLOW_BURN_6X
-	SLIType                string    `json:"sli_type"`               // AVAILABILITY, LATENCY, ERROR_RATE
+	BurnAlertType          string    `json:"burn_alert_type"` // NONE, FAST_BURN_14X, SLOW_BURN_6X
+	SLIType                string    `json:"sli_type"`        // AVAILABILITY, LATENCY, ERROR_RATE
 	CreatedAt              time.Time `json:"created_at"`
 }
 

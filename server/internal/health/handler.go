@@ -13,10 +13,10 @@ type DashboardSummary struct {
 }
 
 type ServerCounts struct {
-	Total    int `json:"total"`
-	Online   int `json:"online"`
-	Suspect  int `json:"suspect"`
-	Offline  int `json:"offline"`
+	Total   int `json:"total"`
+	Online  int `json:"online"`
+	Suspect int `json:"suspect"`
+	Offline int `json:"offline"`
 }
 
 type IncidentCounts struct {
@@ -39,7 +39,7 @@ func HandleDashboardSummary(pool *pgxpool.Pool) http.HandlerFunc {
 				COUNT(*) FILTER (WHERE last_seen_at <= NOW() - INTERVAL '60 seconds') as offline
 			FROM servers
 		`).Scan(&summary.Servers.Total, &summary.Servers.Online, &summary.Servers.Suspect, &summary.Servers.Offline)
-		
+
 		if err != nil {
 			http.Error(w, "Database error", http.StatusInternalServerError)
 			return

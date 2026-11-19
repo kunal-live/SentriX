@@ -2,8 +2,12 @@ package notifications
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -12,6 +16,95 @@ import (
 
 	"github.com/sentrix/server/internal/auth"
 )
+
+func isDisallowedIP(ip net.IP) bool {
+	if ip == nil {
+		return true
+	}
+	// IPv4 & IPv6 Loopback (127.0.0.0/8, ::1)
+	if ip.IsLoopback() {
+		return true
+	}
+	// Cloud metadata (169.254.169.254) & Link-local (169.254.0.0/16, fe80::/10)
+	if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+		return true
+	}
+	// Private network ranges (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7)
+	if ip.IsPrivate() {
+		return true
+	}
+	// Unspecified (0.0.0.0, ::)
+	if ip.IsUnspecified() {
+		return true
+	}
+	return false
+}
+
+// ValidateSafeWebhookURL validates that a URL is safe from SSRF attacks (blocks private IPs, loopback, cloud metadata)
+func ValidateSafeWebhookURL(rawURL string) (*url.URL, error) {
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, errors.New("invalid webhook URL")
+	}
+
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return nil, errors.New("webhook URL scheme must be http or https")
+	}
+
+	hostname := parsedURL.Hostname()
+	if hostname == "" {
+		return nil, errors.New("webhook URL must include a valid hostname")
+	}
+
+	// Reject raw IP representations of cloud metadata directly
+	if hostname == "169.254.169.254" || hostname == "metadata.google.internal" || hostname == "localhost" {
+		return nil, errors.New("SSRF protection: prohibited metadata or localhost destination")
+	}
+
+	// Resolve IPs and verify none are private / loopback / metadata
+	ips, err := net.LookupIP(hostname)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve webhook host: %w", err)
+	}
+
+	if len(ips) == 0 {
+		return nil, errors.New("webhook host could not be resolved to any IP address")
+	}
+
+	for _, ip := range ips {
+		if isDisallowedIP(ip) {
+			return nil, fmt.Errorf("SSRF protection: webhook URL resolves to prohibited IP address %s (internal, private, or cloud metadata ranges are blocked)", ip.String())
+		}
+	}
+
+	return parsedURL, nil
+}
+
+// maskWebhookURL masks sensitive paths, keys, and tokens in webhook URLs for API responses
+func maskWebhookURL(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return "https://***"
+	}
+
+	// Mask query parameters (often contain access tokens or webhook keys)
+	q := u.Query()
+	for k := range q {
+		q.Set(k, "••••••")
+	}
+	u.RawQuery = q.Encode()
+
+	// Mask long path segments that typically contain secret tokens
+	parts := strings.Split(u.Path, "/")
+	for i, part := range parts {
+		if len(part) > 10 {
+			parts[i] = part[:4] + "••••••"
+		}
+	}
+	u.Path = strings.Join(parts, "/")
+
+	return u.String()
+}
 
 type channelListItem struct {
 	ID        string    `json:"id"`
@@ -68,6 +161,9 @@ func HandleListChannels(pool *pgxpool.Pool) http.HandlerFunc {
 				return
 			}
 
+			// Mask webhook URL to prevent secret/token exposure in list API
+			channel.URL = maskWebhookURL(channel.URL)
+
 			channels = append(channels, channel)
 		}
 
@@ -105,14 +201,9 @@ func HandleCreateChannel(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		parsedURL, err := url.Parse(req.URL)
-		if err != nil {
-			http.Error(w, "invalid url", http.StatusBadRequest)
-			return
-		}
-
-		if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
-			http.Error(w, "url must be http or https", http.StatusBadRequest)
+		// Enforce strict SSRF protection: reject private IP ranges, loopback, and cloud metadata
+		if _, err := ValidateSafeWebhookURL(req.URL); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -272,5 +363,40 @@ func HandleListJobs(pool *pgxpool.Pool) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(jobs)
+	}
+}
+
+// POST /api/v1/notifications/channels/{channelID}/test
+func HandleTestChannel(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		channelID := chi.URLParam(r, "channelID")
+		var rawURL string
+		err := pool.QueryRow(r.Context(), `
+			SELECT COALESCE(config->>'url', '')
+			FROM notification_channels
+			WHERE id = $1
+		`, channelID).Scan(&rawURL)
+		if err != nil {
+			http.Error(w, "channel not found", http.StatusNotFound)
+			return
+		}
+
+		if _, err := ValidateSafeWebhookURL(rawURL); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		testPayload := []byte(`{"text":"[SentriX Test Alert] This is a verification test ping from your SentriX cluster."}`)
+		status, err := sendWebhook(r.Context(), rawURL, testPayload)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("test webhook delivery failed: %v", err), http.StatusBadGateway)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"status":      "delivered",
+			"http_status": status,
+		})
 	}
 }

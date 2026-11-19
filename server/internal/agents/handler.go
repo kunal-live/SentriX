@@ -274,31 +274,21 @@ func HandleEnroll(pool *pgxpool.Pool) http.HandlerFunc {
 
 		var enrollmentTokenID string
 
+		// Atomically mark token as used to guarantee single-use under concurrency
 		err = tx.QueryRow(ctx, `
-			SELECT id
-			FROM enrollment_tokens
+			UPDATE enrollment_tokens
+			SET used_at = NOW()
 			WHERE token_hash = $1
 			  AND used_at IS NULL
 			  AND revoked_at IS NULL
 			  AND expires_at > NOW()
-			FOR UPDATE
+			RETURNING id
 		`, tokenHash).Scan(&enrollmentTokenID)
 
 		if err == pgx.ErrNoRows {
-			http.Error(w, "invalid or expired enrollment token", http.StatusUnauthorized)
+			http.Error(w, "invalid, expired, or already-used enrollment token", http.StatusUnauthorized)
 			return
 		}
-
-		if err != nil {
-			http.Error(w, "database error", http.StatusInternalServerError)
-			return
-		}
-
-		_, err = tx.Exec(ctx, `
-			UPDATE enrollment_tokens
-			SET used_at = NOW()
-			WHERE id = $1
-		`, enrollmentTokenID)
 
 		if err != nil {
 			http.Error(w, "database error", http.StatusInternalServerError)
@@ -379,9 +369,9 @@ func HandleEnroll(pool *pgxpool.Pool) http.HandlerFunc {
 			agentID.String(),
 			auth.ClientIP(r),
 			map[string]any{
-				"hostname":     req.Hostname,
-				"platform":     req.Platform,
-				"architecture": req.Architecture,
+				"hostname":      req.Hostname,
+				"platform":      req.Platform,
+				"architecture":  req.Architecture,
 				"agent_version": req.AgentVersion,
 			},
 		)

@@ -75,6 +75,17 @@ func HandleListUsers(pool *pgxpool.Pool) http.HandlerFunc {
 // POST /api/v1/users
 func HandleCreateUser(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		actor := GetUser(r)
+		if actor == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		if actor.Role != "ADMIN" {
+			http.Error(w, "forbidden: only administrators can invite or create users", http.StatusForbidden)
+			return
+		}
+
 		var req createUserRequest
 
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -98,6 +109,11 @@ func HandleCreateUser(pool *pgxpool.Pool) http.HandlerFunc {
 
 		if req.Role != "ADMIN" && req.Role != "OPERATOR" && req.Role != "VIEWER" {
 			http.Error(w, "invalid role", http.StatusBadRequest)
+			return
+		}
+
+		if req.Role == "ADMIN" && actor.Role != "ADMIN" {
+			http.Error(w, "forbidden: non-administrators cannot grant or invite ADMIN role", http.StatusForbidden)
 			return
 		}
 
@@ -126,7 +142,6 @@ func HandleCreateUser(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		actor := GetUser(r)
 		var actorID *string
 		if actor != nil {
 			actorID = &actor.ID

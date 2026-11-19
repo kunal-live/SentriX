@@ -11,14 +11,14 @@ import (
 )
 
 type PlanTier struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	PriceUSD    int      `json:"price_usd_monthly"`
-	NodeLimit   int      `json:"node_limit"`
-	MetricsSec  int      `json:"metrics_per_sec"`
-	RetentionDays int    `json:"retention_days"`
-	Features    []string `json:"features"`
-	Current     bool     `json:"current"`
+	ID            string   `json:"id"`
+	Name          string   `json:"name"`
+	PriceUSD      int      `json:"price_usd_monthly"`
+	NodeLimit     int      `json:"node_limit"`
+	MetricsSec    int      `json:"metrics_per_sec"`
+	RetentionDays int      `json:"retention_days"`
+	Features      []string `json:"features"`
+	Current       bool     `json:"current"`
 }
 
 type UsageMetering struct {

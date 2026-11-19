@@ -11,17 +11,17 @@ import (
 )
 
 type EvidenceGraph struct {
-	IncidentID       string              `json:"incident_id"`
-	Title            string              `json:"title"`
-	LikelyCause      string              `json:"likely_cause"`
-	ConfidenceScore  float64             `json:"confidence_score"` // e.g. 87%
-	AlternativeCause string              `json:"alternative_cause"`
-	SignalsCount     int                 `json:"signals_count"`
-	ChangeCorrelation string             `json:"change_correlation"`
-	EvidenceNodes    []EvidenceNode      `json:"evidence_nodes"`
+	IncidentID         string            `json:"incident_id"`
+	Title              string            `json:"title"`
+	LikelyCause        string            `json:"likely_cause"`
+	ConfidenceScore    float64           `json:"confidence_score"` // e.g. 87%
+	AlternativeCause   string            `json:"alternative_cause"`
+	SignalsCount       int               `json:"signals_count"`
+	ChangeCorrelation  string            `json:"change_correlation"`
+	EvidenceNodes      []EvidenceNode    `json:"evidence_nodes"`
 	InvestigationSteps []string          `json:"investigation_steps"`
-	PredictiveAlert  string              `json:"predictive_alert"`
-	PostmortemDraft  PostmortemSummary   `json:"postmortem_draft"`
+	PredictiveAlert    string            `json:"predictive_alert"`
+	PostmortemDraft    PostmortemSummary `json:"postmortem_draft"`
 }
 
 type EvidenceNode struct {
@@ -35,12 +35,12 @@ type EvidenceNode struct {
 }
 
 type PostmortemSummary struct {
-	Summary             string    `json:"summary"`
-	Impact              string    `json:"impact"`
-	Timeline            []string  `json:"timeline"`
-	RootCause           string    `json:"root_cause"`
-	DetectionMethod     string    `json:"detection_method"`
-	PreventativeActions []string  `json:"preventative_actions"`
+	Summary             string   `json:"summary"`
+	Impact              string   `json:"impact"`
+	Timeline            []string `json:"timeline"`
+	RootCause           string   `json:"root_cause"`
+	DetectionMethod     string   `json:"detection_method"`
+	PreventativeActions []string `json:"preventative_actions"`
 }
 
 var defaultEvidenceGraph = EvidenceGraph{
@@ -115,7 +115,7 @@ var defaultEvidenceGraph = EvidenceGraph{
 			"14:38 UTC: Automated runbook recycled idle connections; pool returned to 42%",
 			"14:42 UTC: Latency normalized to 84ms; incident marked resolved",
 		},
-		RootCause: "Missing index on auth_tokens.expires_at caused full table scans under load, holding connection leases indefinitely.",
+		RootCause:       "Missing index on auth_tokens.expires_at caused full table scans under load, holding connection leases indefinitely.",
 		DetectionMethod: "SentriX Multi-Signal Correlation Engine (SLO Burn Rate + PG Connection Saturation)",
 		PreventativeActions: []string{
 			"Add missing composite index on auth_tokens (user_id, expires_at)",

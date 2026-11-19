@@ -54,19 +54,26 @@ int collect_network(uint64_t *rx, uint64_t *tx) {
 }
 
 int collect_system_load(double *load_1m) {
+    if (!load_1m) return -1;
+    *load_1m = 0.0;
     FILE *fp = fopen("/proc/loadavg", "r");
     if (!fp) return -1;
-    fscanf(fp, "%lf", load_1m);
+    if (fscanf(fp, "%lf", load_1m) != 1) {
+        *load_1m = 0.0;
+    }
     fclose(fp);
     return 0;
 }
 
 int collect_uptime(uint64_t *seconds) {
+    if (!seconds) return -1;
+    *seconds = 0;
     FILE *fp = fopen("/proc/uptime", "r");
     if (!fp) return -1;
-    double up;
-    fscanf(fp, "%lf", &up);
-    *seconds = (uint64_t)up;
+    double up = 0.0;
+    if (fscanf(fp, "%lf", &up) == 1) {
+        *seconds = (uint64_t)up;
+    }
     fclose(fp);
     return 0;
 }

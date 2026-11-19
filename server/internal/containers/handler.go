@@ -43,20 +43,20 @@ type K8sClusterOverview struct {
 }
 
 type K8sNode struct {
-	Name            string            `json:"name"`
-	Role            string            `json:"role"`
-	Status          string            `json:"status"` // Ready, NotReady
-	InternalIP      string            `json:"internal_ip"`
-	OSImage         string            `json:"os_image"`
-	KubeletVersion  string            `json:"kubelet_version"`
-	CPUUsagePct     float64           `json:"cpu_usage_pct"`
-	MemoryUsagePct  float64           `json:"memory_usage_pct"`
-	MemoryPressure  bool              `json:"memory_pressure"`
-	DiskPressure    bool              `json:"disk_pressure"`
-	PIDPressure     bool              `json:"pid_pressure"`
-	PodCount        int               `json:"pod_count"`
-	PodCapacity     int               `json:"pod_capacity"`
-	Labels          map[string]string `json:"labels"`
+	Name           string            `json:"name"`
+	Role           string            `json:"role"`
+	Status         string            `json:"status"` // Ready, NotReady
+	InternalIP     string            `json:"internal_ip"`
+	OSImage        string            `json:"os_image"`
+	KubeletVersion string            `json:"kubelet_version"`
+	CPUUsagePct    float64           `json:"cpu_usage_pct"`
+	MemoryUsagePct float64           `json:"memory_usage_pct"`
+	MemoryPressure bool              `json:"memory_pressure"`
+	DiskPressure   bool              `json:"disk_pressure"`
+	PIDPressure    bool              `json:"pid_pressure"`
+	PodCount       int               `json:"pod_count"`
+	PodCapacity    int               `json:"pod_capacity"`
+	Labels         map[string]string `json:"labels"`
 }
 
 type K8sPod struct {
@@ -105,7 +105,7 @@ func HandleListContainers(pool *pgxpool.Pool) http.HandlerFunc {
 				ServerID:         "srv-prod-api-01",
 				ServerName:       "api-gw-us-east-1",
 				CPUUsagePct:      14.2,
-				MemoryUsageBytes: 134217728, // 128 MB
+				MemoryUsageBytes: 134217728,  // 128 MB
 				MemoryLimitBytes: 1073741824, // 1 GB
 				NetRxBytes:       458291000,
 				NetTxBytes:       892301900,
@@ -121,7 +121,7 @@ func HandleListContainers(pool *pgxpool.Pool) http.HandlerFunc {
 				ServerID:         "srv-prod-db-primary",
 				ServerName:       "db-primary-eu-west-1",
 				CPUUsagePct:      48.6,
-				MemoryUsageBytes: 314572800, // 300 MB
+				MemoryUsageBytes: 314572800,  // 300 MB
 				MemoryLimitBytes: 2147483648, // 2 GB
 				NetRxBytes:       1289104000,
 				NetTxBytes:       1948201000,
@@ -137,7 +137,7 @@ func HandleListContainers(pool *pgxpool.Pool) http.HandlerFunc {
 				ServerID:         "srv-prod-api-02",
 				ServerName:       "api-gw-us-east-2",
 				CPUUsagePct:      6.8,
-				MemoryUsageBytes: 524288000, // 500 MB
+				MemoryUsageBytes: 524288000,  // 500 MB
 				MemoryLimitBytes: 4294967296, // 4 GB
 				NetRxBytes:       682910000,
 				NetTxBytes:       912301000,
@@ -153,7 +153,7 @@ func HandleListContainers(pool *pgxpool.Pool) http.HandlerFunc {
 				ServerID:         "srv-prod-worker-01",
 				ServerName:       "worker-us-east-1",
 				CPUUsagePct:      62.1,
-				MemoryUsageBytes: 891289600, // 850 MB
+				MemoryUsageBytes: 891289600,  // 850 MB
 				MemoryLimitBytes: 1073741824, // 1 GB
 				NetRxBytes:       142910000,
 				NetTxBytes:       189201000,

@@ -3,6 +3,8 @@ package auth
 import (
 	"testing"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 func TestPasswordHashingAndVerification(t *testing.T) {
@@ -71,5 +73,13 @@ func TestJWTAccessToken(t *testing.T) {
 	_, err = ValidateAccessToken(tokenStr + "tampered")
 	if err == nil {
 		t.Fatal("Expected error for tampered token, got nil")
+	}
+
+	// Test rejection of "none" algorithm
+	noneToken := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
+	noneTokenStr, _ := noneToken.SignedString(jwt.UnsafeAllowNoneSignatureType)
+	_, err = ValidateAccessToken(noneTokenStr)
+	if err == nil {
+		t.Fatal("Expected error when validating token with 'none' algorithm, got nil")
 	}
 }

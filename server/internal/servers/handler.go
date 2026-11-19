@@ -7,18 +7,19 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/auth"
 )
 
 type ServerListItem struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Hostname    string    `json:"hostname"`
-	Platform    string    `json:"platform"`
-	Status      string    `json:"status"` // Computed: ONLINE, SUSPECT, OFFLINE
-	LastSeen    time.Time `json:"last_seen"`
-	CPU         *float64  `json:"cpu"`
-	Memory      *float64  `json:"memory"`
-	Disk        *float64  `json:"disk"`
+	ID       string    `json:"id"`
+	Name     string    `json:"name"`
+	Hostname string    `json:"hostname"`
+	Platform string    `json:"platform"`
+	Status   string    `json:"status"` // Computed: ONLINE, SUSPECT, OFFLINE
+	LastSeen time.Time `json:"last_seen"`
+	CPU      *float64  `json:"cpu"`
+	Memory   *float64  `json:"memory"`
+	Disk     *float64  `json:"disk"`
 }
 
 // GET /api/v1/servers
@@ -72,6 +73,12 @@ func HandleListServers(pool *pgxpool.Pool) http.HandlerFunc {
 // DELETE /api/v1/servers/{serverID}
 func HandleDeleteServer(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		actor := auth.GetUser(r)
+		if actor == nil || actor.Role != "ADMIN" {
+			http.Error(w, "forbidden: only administrators can delete servers", http.StatusForbidden)
+			return
+		}
+
 		serverID := chi.URLParam(r, "serverID")
 		if serverID == "" {
 			http.Error(w, "server ID required", http.StatusBadRequest)

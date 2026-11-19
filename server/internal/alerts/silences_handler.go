@@ -11,16 +11,16 @@ import (
 )
 
 type Silence struct {
-	ID         string     `json:"id"`
-	ServerID   *string    `json:"server_id,omitempty"`
-	ServerName *string    `json:"server_name,omitempty"`
-	RuleID     *string    `json:"rule_id,omitempty"`
-	RuleName   *string    `json:"rule_name,omitempty"`
-	Reason     string     `json:"reason"`
-	StartsAt   time.Time  `json:"starts_at"`
-	EndsAt     time.Time  `json:"ends_at"`
-	CreatedAt  time.Time  `json:"created_at"`
-	Active     bool       `json:"active"`
+	ID         string    `json:"id"`
+	ServerID   *string   `json:"server_id,omitempty"`
+	ServerName *string   `json:"server_name,omitempty"`
+	RuleID     *string   `json:"rule_id,omitempty"`
+	RuleName   *string   `json:"rule_name,omitempty"`
+	Reason     string    `json:"reason"`
+	StartsAt   time.Time `json:"starts_at"`
+	EndsAt     time.Time `json:"ends_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	Active     bool      `json:"active"`
 }
 
 type CreateSilenceRequest struct {

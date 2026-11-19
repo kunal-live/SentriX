@@ -41,15 +41,15 @@ import (
 )
 
 type DemoServer struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Hostname  string    `json:"hostname"`
-	Platform  string    `json:"platform"`
-	Status    string    `json:"status"` // ONLINE, SUSPECT, OFFLINE
-	LastSeen  time.Time `json:"last_seen"`
-	CPU       float64   `json:"cpu"`
-	Memory    float64   `json:"memory"`
-	Disk      float64   `json:"disk"`
+	ID       string    `json:"id"`
+	Name     string    `json:"name"`
+	Hostname string    `json:"hostname"`
+	Platform string    `json:"platform"`
+	Status   string    `json:"status"` // ONLINE, SUSPECT, OFFLINE
+	LastSeen time.Time `json:"last_seen"`
+	CPU      float64   `json:"cpu"`
+	Memory   float64   `json:"memory"`
+	Disk     float64   `json:"disk"`
 }
 
 type DemoIncidentComment struct {
@@ -108,23 +108,23 @@ type DemoAlertRule struct {
 }
 
 type DemoCheck struct {
-	ID                  string     `json:"id"`
-	ServerID            string     `json:"server_id"`
-	ServerName          string     `json:"server_name"`
-	Type                string     `json:"type"` // PROCESS, SERVICE, PORT, COMMAND
-	Name                string     `json:"name"`
-	Enabled             bool       `json:"enabled"`
-	IntervalSeconds     int        `json:"interval_seconds"`
-	TimeoutSeconds      int        `json:"timeout_seconds"`
-	FailureThreshold    int        `json:"failure_threshold"`
-	SuccessThreshold    int        `json:"success_threshold"`
-	Severity            string     `json:"severity"`
-	Config              any        `json:"config"`
-	State               string     `json:"state"` // HEALTHY, DEGRADED, FAILING
-	ConsecutiveFailures int        `json:"consecutive_failures"`
-	LastMessage         string     `json:"last_message"`
-	LastResultAt        time.Time  `json:"last_result_at"`
-	CreatedAt           time.Time  `json:"created_at"`
+	ID                  string    `json:"id"`
+	ServerID            string    `json:"server_id"`
+	ServerName          string    `json:"server_name"`
+	Type                string    `json:"type"` // PROCESS, SERVICE, PORT, COMMAND
+	Name                string    `json:"name"`
+	Enabled             bool      `json:"enabled"`
+	IntervalSeconds     int       `json:"interval_seconds"`
+	TimeoutSeconds      int       `json:"timeout_seconds"`
+	FailureThreshold    int       `json:"failure_threshold"`
+	SuccessThreshold    int       `json:"success_threshold"`
+	Severity            string    `json:"severity"`
+	Config              any       `json:"config"`
+	State               string    `json:"state"` // HEALTHY, DEGRADED, FAILING
+	ConsecutiveFailures int       `json:"consecutive_failures"`
+	LastMessage         string    `json:"last_message"`
+	LastResultAt        time.Time `json:"last_result_at"`
+	CreatedAt           time.Time `json:"created_at"`
 }
 
 type DemoUser struct {
@@ -309,18 +309,18 @@ func initStore() {
 	}
 
 	inc2 := &DemoIncident{
-		ID:             "inc-002",
-		ServerID:       s1.ID,
-		ServerName:     s1.Name,
-		Title:          "Elevated API Gateway Response Latency P99 > 850ms",
-		Description:    "P99 latency crossed nominal threshold of 250ms due to upstream payment webhook retries.",
-		Severity:       "CRITICAL",
-		Status:         "OPEN",
-		StartedAt:      now.Add(-14 * time.Minute),
-		Assignee:       "Payments Engineering",
-		AssigneeEmail:  "payments@sentrix.local",
-		Summary:        "Underlying third-party gateway response delays propagating back to ingress proxies.",
-		Comments:       []DemoIncidentComment{},
+		ID:            "inc-002",
+		ServerID:      s1.ID,
+		ServerName:    s1.Name,
+		Title:         "Elevated API Gateway Response Latency P99 > 850ms",
+		Description:   "P99 latency crossed nominal threshold of 250ms due to upstream payment webhook retries.",
+		Severity:      "CRITICAL",
+		Status:        "OPEN",
+		StartedAt:     now.Add(-14 * time.Minute),
+		Assignee:      "Payments Engineering",
+		AssigneeEmail: "payments@sentrix.local",
+		Summary:       "Underlying third-party gateway response delays propagating back to ingress proxies.",
+		Comments:      []DemoIncidentComment{},
 		Timeline: []DemoTimelineEvent{
 			{
 				ID:        "evt-10",
@@ -1657,4 +1657,3 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 	// WebSocket handler
 	r.Get("/ws", realtime.HandleWebSocket(hub, ticketStore))
 }
-

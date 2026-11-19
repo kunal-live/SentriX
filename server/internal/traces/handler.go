@@ -96,9 +96,9 @@ func init() {
 				Status:       "ERROR",
 				StatusCode:   503,
 				Attributes: map[string]any{
-					"rpc.system": "grpc",
+					"rpc.system":       "grpc",
 					"payment.currency": "USD",
-					"payment.amount": 149.00,
+					"payment.amount":   149.00,
 				},
 			},
 			{
@@ -171,8 +171,8 @@ func init() {
 				Operation:    "ValidateSessionTokens",
 				DurationMs:   36.5,
 				StartTime:    now.Add(-12*time.Minute + 3*time.Millisecond),
-				Status:      "OK",
-				StatusCode:  200,
+				Status:       "OK",
+				StatusCode:   200,
 			},
 			{
 				SpanID:       childSpan2_2,
@@ -182,8 +182,8 @@ func init() {
 				Operation:    "SELECT users WHERE email = $1",
 				DurationMs:   14.2,
 				StartTime:    now.Add(-12*time.Minute + 8*time.Millisecond),
-				Status:      "OK",
-				StatusCode:  200,
+				Status:       "OK",
+				StatusCode:   200,
 			},
 		},
 	}
@@ -221,7 +221,7 @@ func init() {
 				Operation:    "TimescaleDB::ChunkDownsample",
 				DurationMs:   148.2,
 				StartTime:    now.Add(-18*time.Minute + 12*time.Millisecond),
-				Status:      "OK",
+				Status:       "OK",
 			},
 		},
 	}

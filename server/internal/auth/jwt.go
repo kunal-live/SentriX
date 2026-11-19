@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -18,14 +20,45 @@ type AccessTokenClaims struct {
 	jwt.RegisteredClaims
 }
 
-func jwtSecret() []byte {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		slog.Warn("JWT_SECRET is not set; using insecure development secret")
-		secret = "sentrix-dev-insecure-secret"
-	}
+var (
+	secretOnce   sync.Once
+	activeSecret []byte
+)
 
-	return []byte(secret)
+func jwtSecret() []byte {
+	secretOnce.Do(func() {
+		secret := os.Getenv("JWT_SECRET")
+		insecureDefaults := map[string]bool{
+			"":                                  true,
+			"change-me-to-a-long-random-string": true,
+			"sentrix-dev-insecure-secret":       true,
+			"secret":                            true,
+		}
+
+		if insecureDefaults[secret] {
+			env := os.Getenv("SENTRIX_ENV")
+			if env == "" {
+				env = os.Getenv("ENV")
+			}
+
+			if env == "production" || env == "prod" {
+				slog.Error("FATAL: Insecure or default JWT_SECRET detected in production environment! Generating ephemeral cryptographic key.")
+			} else {
+				slog.Warn("JWT_SECRET is unset or using default example; generating secure ephemeral key for session.")
+			}
+
+			randBytes := make([]byte, 32)
+			if _, err := rand.Read(randBytes); err == nil {
+				activeSecret = randBytes
+				return
+			}
+			activeSecret = []byte("sentrix-fallback-ephemeral-key-2026")
+		} else {
+			activeSecret = []byte(secret)
+		}
+	})
+
+	return activeSecret
 }
 
 func GenerateAccessToken(userID, email, role string) (string, time.Time, error) {
@@ -61,12 +94,13 @@ func ValidateAccessToken(tokenString string) (*AccessTokenClaims, error) {
 		tokenString,
 		claims,
 		func(t *jwt.Token) (interface{}, error) {
-			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+				return nil, fmt.Errorf("unexpected or rejected signing method: %v", t.Header["alg"])
 			}
 
 			return jwtSecret(), nil
 		},
+		jwt.WithValidMethods([]string{"HS256"}),
 	)
 
 	if err != nil {

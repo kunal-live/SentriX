@@ -33,16 +33,16 @@ type Team struct {
 }
 
 type TenantQuota struct {
-	OrgID             string `json:"org_id"`
-	ServersActive     int    `json:"servers_active"`
-	ServersLimit      int    `json:"servers_limit"`
-	MetricsPerSec     int    `json:"metrics_per_sec"`
-	MetricsLimit      int    `json:"metrics_limit"`
-	LogsGBPerDay      float64 `json:"logs_gb_per_day"`
-	LogsLimitGB       float64 `json:"logs_limit_gb"`
-	RetentionDays     int    `json:"retention_days"`
-	CustomDashboards  int    `json:"custom_dashboards"`
-	DashboardsLimit   int    `json:"dashboards_limit"`
+	OrgID            string  `json:"org_id"`
+	ServersActive    int     `json:"servers_active"`
+	ServersLimit     int     `json:"servers_limit"`
+	MetricsPerSec    int     `json:"metrics_per_sec"`
+	MetricsLimit     int     `json:"metrics_limit"`
+	LogsGBPerDay     float64 `json:"logs_gb_per_day"`
+	LogsLimitGB      float64 `json:"logs_limit_gb"`
+	RetentionDays    int     `json:"retention_days"`
+	CustomDashboards int     `json:"custom_dashboards"`
+	DashboardsLimit  int     `json:"dashboards_limit"`
 }
 
 var (

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -195,7 +196,27 @@ func sendWebhook(ctx context.Context, url string, payload []byte) (int, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "SentriX-Notifier")
 
-	client := &http.Client{}
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, _, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+			if err != nil {
+				return nil, err
+			}
+			for _, ip := range ips {
+				if isDisallowedIP(ip) {
+					return nil, fmt.Errorf("SSRF protection blocked dial to %s (%s)", host, ip)
+				}
+			}
+			return dialer.DialContext(ctx, network, addr)
+		},
+	}
+
+	client := &http.Client{Transport: transport}
 
 	resp, err := client.Do(req)
 	if err != nil {

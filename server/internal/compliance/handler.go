@@ -19,38 +19,38 @@ type ComplianceFramework struct {
 }
 
 type AuditControl struct {
-	Code        string `json:"code"`
-	Title       string `json:"title"`
-	Evidence    string `json:"evidence"`
-	Pass        bool   `json:"pass"`
+	Code     string `json:"code"`
+	Title    string `json:"title"`
+	Evidence string `json:"evidence"`
+	Pass     bool   `json:"pass"`
 }
 
 type DisasterRecoveryPosture struct {
-	RPOActualMin    int            `json:"rpo_actual_minutes"`
-	RPOTargetMin    int            `json:"rpo_target_minutes"`
-	RTOActualMin    int            `json:"rto_actual_minutes"`
-	RTOTargetMin    int            `json:"rto_target_minutes"`
-	LastBackupTime  time.Time      `json:"last_backup_time"`
-	BackupStatus    string         `json:"backup_status"` // VERIFIED_HEALTHY, STALE, FAILED
-	AutomatedTests  []RestoreTest  `json:"restore_test_history"`
+	RPOActualMin   int           `json:"rpo_actual_minutes"`
+	RPOTargetMin   int           `json:"rpo_target_minutes"`
+	RTOActualMin   int           `json:"rto_actual_minutes"`
+	RTOTargetMin   int           `json:"rto_target_minutes"`
+	LastBackupTime time.Time     `json:"last_backup_time"`
+	BackupStatus   string        `json:"backup_status"` // VERIFIED_HEALTHY, STALE, FAILED
+	AutomatedTests []RestoreTest `json:"restore_test_history"`
 }
 
 type RestoreTest struct {
-	TestID          string    `json:"test_id"`
-	Timestamp       time.Time `json:"timestamp"`
-	SnapshotSizeGB  float64   `json:"snapshot_size_gb"`
-	DurationSec     int       `json:"duration_seconds"`
-	IntegrityPass   bool      `json:"integrity_pass"`
-	TargetEnv       string    `json:"target_sandbox_environment"`
-	VerifiedBy      string    `json:"verified_by"`
+	TestID         string    `json:"test_id"`
+	Timestamp      time.Time `json:"timestamp"`
+	SnapshotSizeGB float64   `json:"snapshot_size_gb"`
+	DurationSec    int       `json:"duration_seconds"`
+	IntegrityPass  bool      `json:"integrity_pass"`
+	TargetEnv      string    `json:"target_sandbox_environment"`
+	VerifiedBy     string    `json:"verified_by"`
 }
 
 type SBOMRecord struct {
-	Component     string `json:"component"`
-	Version       string `json:"version"`
-	License       string `json:"license"`
-	Vulnerabilities int  `json:"vulnerabilities_count"`
-	SHA256        string `json:"sha256_checksum"`
+	Component       string `json:"component"`
+	Version         string `json:"version"`
+	License         string `json:"license"`
+	Vulnerabilities int    `json:"vulnerabilities_count"`
+	SHA256          string `json:"sha256_checksum"`
 }
 
 var defaultFrameworks = []ComplianceFramework{

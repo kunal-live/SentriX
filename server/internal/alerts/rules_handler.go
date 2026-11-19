@@ -11,19 +11,19 @@ import (
 )
 
 type AlertRule struct {
-	ID               string     `json:"id"`
-	Name             string     `json:"name"`
-	Metric           string     `json:"metric"`
-	Operator         string     `json:"operator"`
-	Threshold        float64    `json:"threshold"`
-	WindowSeconds    int        `json:"window_seconds"`
-	ForSeconds       int        `json:"for_seconds"`
-	Severity         string     `json:"severity"`
-	Enabled          bool       `json:"enabled"`
-	CooldownSeconds  int        `json:"cooldown_seconds"`
-	ResolveThreshold *float64   `json:"resolve_threshold"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
+	ID               string    `json:"id"`
+	Name             string    `json:"name"`
+	Metric           string    `json:"metric"`
+	Operator         string    `json:"operator"`
+	Threshold        float64   `json:"threshold"`
+	WindowSeconds    int       `json:"window_seconds"`
+	ForSeconds       int       `json:"for_seconds"`
+	Severity         string    `json:"severity"`
+	Enabled          bool      `json:"enabled"`
+	CooldownSeconds  int       `json:"cooldown_seconds"`
+	ResolveThreshold *float64  `json:"resolve_threshold"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 type CreateAlertRuleRequest struct {
@@ -40,13 +40,13 @@ type CreateAlertRuleRequest struct {
 }
 
 type UpdateAlertRuleRequest struct {
-	Name             *string   `json:"name"`
-	Threshold        *float64  `json:"threshold"`
-	ForSeconds       *int      `json:"for_seconds"`
-	WindowSeconds    *int      `json:"window_seconds"`
-	CooldownSeconds  *int      `json:"cooldown_seconds"`
-	Enabled          *bool     `json:"enabled"`
-	ResolveThreshold *float64  `json:"resolve_threshold"`
+	Name             *string  `json:"name"`
+	Threshold        *float64 `json:"threshold"`
+	ForSeconds       *int     `json:"for_seconds"`
+	WindowSeconds    *int     `json:"window_seconds"`
+	CooldownSeconds  *int     `json:"cooldown_seconds"`
+	Enabled          *bool    `json:"enabled"`
+	ResolveThreshold *float64 `json:"resolve_threshold"`
 }
 
 var allowedMetrics = map[string]bool{

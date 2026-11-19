@@ -14,7 +14,7 @@ import (
 type IntegrationChannel struct {
 	ID               string     `json:"id"`
 	Name             string     `json:"name"`
-	Type             string     `json:"type"` // SLACK, TEAMS, PAGERDUTY, WEBHOOK, EMAIL
+	Type             string     `json:"type"`   // SLACK, TEAMS, PAGERDUTY, WEBHOOK, EMAIL
 	Status           string     `json:"status"` // ACTIVE, FAILED, DISABLED
 	TargetEndpoint   string     `json:"target_endpoint"`
 	EventsSubscribed []string   `json:"events_subscribed"`
@@ -40,7 +40,7 @@ type DeadLetterItem struct {
 }
 
 var (
-	integrationsMu sync.RWMutex
+	integrationsMu  sync.RWMutex
 	defaultChannels = []*IntegrationChannel{
 		{
 			ID:               "int-slack-alerts",
@@ -141,9 +141,9 @@ func HandleTestIntegration(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"status":    "SUCCESS",
+			"status":     "SUCCESS",
 			"latency_ms": 42,
-			"message":   "Verification test packet delivered successfully with valid X-SentriX-Signature HMAC.",
+			"message":    "Verification test packet delivered successfully with valid X-SentriX-Signature HMAC.",
 		})
 	}
 }

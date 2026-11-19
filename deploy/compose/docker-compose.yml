@@ -5,11 +5,12 @@ services:
     image: timescale/timescaledb:latest-pg16
     container_name: sentrix-db
     environment:
-      POSTGRES_USER: sentrix
-      POSTGRES_PASSWORD: sentrix_secret
-      POSTGRES_DB: sentrix
+      POSTGRES_USER: ${POSTGRES_USER:-sentrix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-secure-password}
+      POSTGRES_DB: ${POSTGRES_DB:-sentrix}
     ports:
-      - "5432:5432"
+      # Bind strictly to localhost loopback to prevent exposing database port to public network
+      - "127.0.0.1:5432:5432"
     volumes:
       - sentrix_data:/var/lib/postgresql/data
       - ../../server/migrations:/docker-entrypoint-initdb.d # Auto-run migrations on first start

@@ -90,6 +90,11 @@ func HandleLogin(pool *pgxpool.Pool) http.HandlerFunc {
 
 		ctx := r.Context()
 
+		if err := CheckLoginLocked(ctx, pool, req.Email); err != nil {
+			http.Error(w, "account temporarily locked due to consecutive failed logins; please try again later", http.StatusTooManyRequests)
+			return
+		}
+
 		var userID, email, role, passwordHash, status string
 
 		err := pool.QueryRow(ctx, `
@@ -99,6 +104,7 @@ func HandleLogin(pool *pgxpool.Pool) http.HandlerFunc {
 		`, req.Email).Scan(&userID, &email, &role, &passwordHash, &status)
 
 		if err != nil {
+			_ = RecordLoginFailure(ctx, pool, req.Email)
 			http.Error(w, "invalid email or password", http.StatusUnauthorized)
 			return
 		}
@@ -110,9 +116,12 @@ func HandleLogin(pool *pgxpool.Pool) http.HandlerFunc {
 
 		valid, err := VerifyPassword(req.Password, passwordHash)
 		if err != nil || !valid {
+			_ = RecordLoginFailure(ctx, pool, req.Email)
 			http.Error(w, "invalid email or password", http.StatusUnauthorized)
 			return
 		}
+
+		_ = ResetLoginFailures(ctx, pool, req.Email)
 
 		tx, err := pool.Begin(ctx)
 		if err != nil {
@@ -337,5 +346,78 @@ func HandleMe() http.HandlerFunc {
 			Email: user.Email,
 			Role:  user.Role,
 		})
+	}
+}
+
+type changePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+// POST /api/v1/auth/password
+func HandleChangePassword(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		actor := GetUser(r)
+		if actor == nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		var req changePasswordRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
+			return
+		}
+
+		if req.CurrentPassword == "" || req.NewPassword == "" {
+			http.Error(w, "current_password and new_password are required", http.StatusBadRequest)
+			return
+		}
+
+		if len(req.NewPassword) < 8 {
+			http.Error(w, "new_password must be at least 8 characters", http.StatusBadRequest)
+			return
+		}
+
+		ctx := r.Context()
+		var currentHash string
+		err := pool.QueryRow(ctx, `SELECT password_hash FROM users WHERE id = $1`, actor.ID).Scan(&currentHash)
+		if err != nil {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+
+		valid, err := VerifyPassword(req.CurrentPassword, currentHash)
+		if err != nil || !valid {
+			http.Error(w, "current password does not match", http.StatusUnauthorized)
+			return
+		}
+
+		newHash, err := HashPassword(req.NewPassword)
+		if err != nil {
+			http.Error(w, "failed to hash new password", http.StatusInternalServerError)
+			return
+		}
+
+		_, err = pool.Exec(ctx, `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, newHash, actor.ID)
+		if err != nil {
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+		}
+
+		WriteAudit(
+			ctx,
+			pool,
+			&actor.ID,
+			"auth.password_change",
+			"user",
+			actor.ID,
+			ClientIP(r),
+			map[string]any{"email": actor.Email},
+		)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"password updated successfully"}`))
 	}
 }

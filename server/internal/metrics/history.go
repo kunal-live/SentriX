@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -49,6 +50,18 @@ var stepIntervals = map[string]string{
 func HandleServerMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		serverID := chi.URLParam(r, "serverID")
+		if _, err := uuid.Parse(serverID); err != nil {
+			http.Error(w, "invalid server ID format", http.StatusBadRequest)
+			return
+		}
+
+		ctx := r.Context()
+		var exists bool
+		err := pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM servers WHERE id = $1)`, serverID).Scan(&exists)
+		if err != nil || !exists {
+			http.Error(w, "server not found", http.StatusNotFound)
+			return
+		}
 
 		metric := r.URL.Query().Get("metric")
 		if metric == "" {

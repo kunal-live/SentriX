@@ -128,9 +128,14 @@ func HandleWebSocket(hub *Hub, store *TicketStore) http.HandlerFunc {
 		if origin != "" {
 			opts.OriginPatterns = []string{origin}
 		} else {
-			// Development only.
-			// In production, set WEB_ORIGIN.
-			opts.InsecureSkipVerify = true
+			// Validate Origin against host to prevent Cross-Site WebSocket Hijacking (CSWSH)
+			opts.OriginPatterns = []string{
+				r.Host,
+				"http://" + r.Host,
+				"https://" + r.Host,
+				"localhost*",
+				"127.0.0.1*",
+			}
 		}
 
 		conn, err := websocket.Accept(w, r, opts)

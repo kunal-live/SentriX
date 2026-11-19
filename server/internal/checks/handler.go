@@ -173,6 +173,14 @@ func HandleCreateCheck(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		if req.Type == "COMMAND" {
+			actor := auth.GetUser(r)
+			if actor == nil || actor.Role != "ADMIN" {
+				http.Error(w, "forbidden: only administrators can create COMMAND checks", http.StatusForbidden)
+				return
+			}
+		}
+
 		if req.Name == "" {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
@@ -271,11 +279,11 @@ func HandleCreateCheck(pool *pgxpool.Pool) http.HandlerFunc {
 			id.String(),
 			auth.ClientIP(r),
 			map[string]any{
-				"name":       req.Name,
-				"type":       req.Type,
-				"server_id":  req.ServerID,
-				"enabled":    enabled,
-				"severity":   req.Severity,
+				"name":      req.Name,
+				"type":      req.Type,
+				"server_id": req.ServerID,
+				"enabled":   enabled,
+				"severity":  req.Severity,
 			},
 		)
 
@@ -485,6 +493,22 @@ func validateCheckConfig(checkType string, raw json.RawMessage) error {
 		command, ok := cfg["command"].(string)
 		if !ok || strings.TrimSpace(command) == "" {
 			return errors.New("command check requires config.command")
+		}
+		command = strings.TrimSpace(command)
+		if strings.ContainsAny(command, ";|&$`><\n\r") {
+			return errors.New("command check cannot contain shell metacharacters (; | & $ ` > <)")
+		}
+		if strings.Contains(command, "..") {
+			return errors.New("command check cannot contain path traversal (..)")
+		}
+		isAllowed := strings.HasPrefix(command, "/etc/sentrix/scripts/") ||
+			strings.HasPrefix(command, "/usr/local/bin/sentrix-probe-") ||
+			command == "/usr/bin/uptime" ||
+			command == "/bin/df" ||
+			command == "/usr/bin/free" ||
+			command == "/usr/bin/vmstat"
+		if !isAllowed {
+			return errors.New("command check must be an allowlisted executable (/etc/sentrix/scripts/* or system probe)")
 		}
 
 	default:

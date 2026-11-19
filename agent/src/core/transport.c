@@ -1,38 +1,65 @@
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netdb.h>
 #include <time.h>
 #include "collector.h"
+#include "cJSON.h"
 
 void build_telemetry_json(char *buffer, size_t size, const char *agent_id, uint64_t seq, const SystemMetrics *m) {
+    if (!buffer || size == 0) return;
+
     time_t now = time(NULL);
     struct tm *tm_info = gmtime(&now);
     char timestamp[32];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", tm_info);
 
-    snprintf(buffer, size,
-        "{"
-        "\"agent_id\":\"%s\","
-        "\"timestamp\":\"%s\","
-        "\"sequence\":%lu,"
-        "\"metrics\":["
-            "{\"name\":\"system.cpu.utilization\",\"value\":%.2f,\"unit\":\"percent\"},"
-            "{\"name\":\"system.memory.utilization\",\"value\":%.2f,\"unit\":\"percent\"},"
-            "{\"name\":\"system.disk.utilization\",\"value\":%.2f,\"unit\":\"percent\"},"
-            "{\"name\":\"system.load.1m\",\"value\":%.2f,\"unit\":\"count\"}"
-        "]"
-        "}",
-        agent_id, timestamp, (unsigned long)seq,
-        m->cpu_utilization,
-        (m->mem_total_bytes > 0) ? (100.0 * (double)m->mem_used_bytes / (double)m->mem_total_bytes) : 0.0,
-        (m->disk_total_bytes > 0) ? (100.0 * (double)m->disk_used_bytes / (double)m->disk_total_bytes) : 0.0,
-        m->load_avg_1m
-    );
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "agent_id", agent_id ? agent_id : "");
+    cJSON_AddStringToObject(root, "timestamp", timestamp);
+    cJSON_AddNumberToObject(root, "sequence", (double)seq);
+
+    cJSON *metrics = cJSON_AddArrayToObject(root, "metrics");
+
+    cJSON *m_cpu = cJSON_CreateObject();
+    cJSON_AddStringToObject(m_cpu, "name", "system.cpu.utilization");
+    cJSON_AddNumberToObject(m_cpu, "value", m->cpu_utilization);
+    cJSON_AddStringToObject(m_cpu, "unit", "percent");
+    cJSON_AddItemToArray(metrics, m_cpu);
+
+    double mem_pct = (m->mem_total_bytes > 0) ? (100.0 * (double)m->mem_used_bytes / (double)m->mem_total_bytes) : 0.0;
+    cJSON *m_mem = cJSON_CreateObject();
+    cJSON_AddStringToObject(m_mem, "name", "system.memory.utilization");
+    cJSON_AddNumberToObject(m_mem, "value", mem_pct);
+    cJSON_AddStringToObject(m_mem, "unit", "percent");
+    cJSON_AddItemToArray(metrics, m_mem);
+
+    double disk_pct = (m->disk_total_bytes > 0) ? (100.0 * (double)m->disk_used_bytes / (double)m->disk_total_bytes) : 0.0;
+    cJSON *m_disk = cJSON_CreateObject();
+    cJSON_AddStringToObject(m_disk, "name", "system.disk.utilization");
+    cJSON_AddNumberToObject(m_disk, "value", disk_pct);
+    cJSON_AddStringToObject(m_disk, "unit", "percent");
+    cJSON_AddItemToArray(metrics, m_disk);
+
+    cJSON *m_load = cJSON_CreateObject();
+    cJSON_AddStringToObject(m_load, "name", "system.load.1m");
+    cJSON_AddNumberToObject(m_load, "value", m->load_avg_1m);
+    cJSON_AddStringToObject(m_load, "unit", "count");
+    cJSON_AddItemToArray(metrics, m_load);
+
+    char *rendered = cJSON_PrintUnformatted(root);
+    if (rendered) {
+        snprintf(buffer, size, "%s", rendered);
+        free(rendered);
+    }
+    cJSON_Delete(root);
 }
 
 int http_request(
@@ -80,6 +107,12 @@ int http_request(
         freeaddrinfo(res);
         return 0;
     }
+
+    struct timeval tv;
+    tv.tv_sec = 8;
+    tv.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
 
     if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
         close(sock);
@@ -153,7 +186,9 @@ int http_request(
     }
 
     int status = 0;
-    sscanf(response_body, "HTTP/1.%*d %d", &status);
+    if (sscanf(response_body, "HTTP/1.%*d %d", &status) != 1) {
+        status = 0;
+    }
 
     char *header_end = strstr(response_body, "\r\n\r\n");
 

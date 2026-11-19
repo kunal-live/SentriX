@@ -16,8 +16,24 @@ HOSTNAME="$(hostname)"
 PLATFORM="linux"
 ARCH="$(uname -m)"
 
+PROTOCOL="http"
+if [[ "${SERVER_PORT}" == "443" || "${SENTRIX_USE_HTTPS:-false}" == "true" ]]; then
+  PROTOCOL="https"
+fi
+
+if [[ "${SERVER_HOST}" =~ ^https?:// ]]; then
+  TARGET_URL="${SERVER_HOST}:${SERVER_PORT}/api/v1/agent/enroll"
+else
+  TARGET_URL="${PROTOCOL}://${SERVER_HOST}:${SERVER_PORT}/api/v1/agent/enroll"
+fi
+
+CURL_OPTS=(-sS --proto '=https,http')
+if [[ -n "${SENTRIX_CA_CERT:-}" ]]; then
+  CURL_OPTS+=(--cacert "${SENTRIX_CA_CERT}")
+fi
+
 RESPONSE="$(
-  curl -sS -X POST "http://${SERVER_HOST}:${SERVER_PORT}/api/v1/agent/enroll" \
+  curl "${CURL_OPTS[@]}" -X POST "${TARGET_URL}" \
     -H 'Content-Type: application/json' \
     -d '{
       "token": "'"${ENROLLMENT_TOKEN}"'",
@@ -51,10 +67,12 @@ SENTRIX_AGENT_ID=${AGENT_ID}
 SENTRIX_AGENT_CREDENTIAL=${CREDENTIAL}
 EOF
 
-chmod 0640 /etc/sentrix/agent.env
+chmod 0600 /etc/sentrix/agent.env
 
 if id -u sentrix >/dev/null 2>&1; then
   chown root:sentrix /etc/sentrix/agent.env
+else
+  chown root:root /etc/sentrix/agent.env
 fi
 
 echo "Agent enrolled successfully."

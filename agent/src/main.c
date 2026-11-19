@@ -3,6 +3,11 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <sys/stat.h>
+#ifndef _WIN32
+#include <pwd.h>
+#include <grp.h>
+#endif
 #include "collector.h"
 #include "checks.h"
 #include "buffer.h"
@@ -30,6 +35,13 @@ static void trim_inplace(char *str) {
 }
 
 static void load_config_file(const char *filepath, AgentConfig *cfg) {
+    struct stat st;
+    if (stat(filepath, &st) == 0) {
+        if ((st.st_mode & 0077) != 0) {
+            fprintf(stderr, "SECURITY WARNING: %s has overly permissive permissions! (Recommended: chmod 0600)\n", filepath);
+        }
+    }
+
     FILE *fp = fopen(filepath, "r");
     if (!fp) return;
 
@@ -93,6 +105,22 @@ static void load_env_vars(AgentConfig *cfg) {
     }
 }
 
+static void maybe_drop_privileges(void) {
+#ifndef _WIN32
+    if (getuid() == 0) {
+        struct passwd *pw = getpwnam("sentrix");
+        if (!pw) {
+            pw = getpwnam("nobody");
+        }
+        if (pw) {
+            if (setgid(pw->pw_gid) == 0 && setuid(pw->pw_uid) == 0) {
+                printf("Security: Dropped root privileges to user '%s' (UID %d, GID %d)\n", pw->pw_name, pw->pw_uid, pw->pw_gid);
+            }
+        }
+    }
+#endif
+}
+
 static void print_usage(const char *prog) {
     printf("Usage: %s [OPTIONS]\n", prog);
     printf("Options:\n");
@@ -100,7 +128,6 @@ static void print_usage(const char *prog) {
     printf("  -h <host>      SentriX server host\n");
     printf("  -p <port>      SentriX server port (default: 8080)\n");
     printf("  -i <agent_id>  Agent UUID\n");
-    printf("  -t <token>     Agent authorization credential token\n");
     printf("  --help         Show this help message\n");
 }
 
@@ -142,13 +169,16 @@ int main(int argc, char *argv[]) {
             config.server_port = atoi(argv[++i]);
         } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
             strncpy(config.agent_id, argv[++i], sizeof(config.agent_id) - 1);
-        } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
-            strncpy(config.auth_token, argv[++i], sizeof(config.auth_token) - 1);
+        } else if (strcmp(argv[i], "-t") == 0) {
+            fprintf(stderr, "SECURITY ERROR: Passing credential tokens via -t CLI arguments is disabled to prevent exposure in process lists (/proc/<pid>/cmdline). Configure SENTRIX_AGENT_CREDENTIAL in %s instead.\n", config_file);
+            return 1;
         }
     }
 
     printf("Target Server: %s:%d\n", config.server_host, config.server_port);
     printf("Agent ID:      %s\n", config.agent_id);
+
+    maybe_drop_privileges();
 
     DiskBuffer spool_buf;
     if (buffer_init(&spool_buf, "sentrix_spool.bin", 0) == 0) {

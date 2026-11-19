@@ -1,4 +1,6 @@
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 
 #include "checks.h"
 #include "cJSON.h"
@@ -323,11 +325,39 @@ static int tcp_port_open(
     return ok;
 }
 
+static int is_allowlisted_command(const char *cmd) {
+    if (!cmd || cmd[0] == '\0') return 0;
+    if (strstr(cmd, "..") != NULL) return 0;
+    if (strpbrk(cmd, ";|&$`><\n\r") != NULL) return 0;
+
+    if (strncmp(cmd, "/etc/sentrix/scripts/", 21) == 0) return 1;
+    if (strncmp(cmd, "/usr/local/bin/sentrix-probe-", 29) == 0) return 1;
+
+    const char *allowed[] = {
+        "/usr/bin/uptime",
+        "/bin/df",
+        "/usr/bin/free",
+        "/usr/bin/vmstat",
+        NULL
+    };
+    for (int i = 0; allowed[i] != NULL; i++) {
+        if (strcmp(cmd, allowed[i]) == 0) return 1;
+    }
+
+    return 0;
+}
+
 static int command_ok(const cJSON *config, int timeout_seconds, char *message, size_t message_size) {
     const cJSON *command_item = cJSON_GetObjectItemCaseSensitive(config, "command");
 
     if (!cJSON_IsString(command_item) || command_item->valuestring == NULL) {
         snprintf(message, message_size, "command missing");
+        return 0;
+    }
+
+    const char *cmd_path = command_item->valuestring;
+    if (!is_allowlisted_command(cmd_path)) {
+        snprintf(message, message_size, "command rejected: not in security allowlist");
         return 0;
     }
 

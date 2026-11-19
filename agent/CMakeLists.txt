@@ -6,6 +6,22 @@ set(CMAKE_C_STANDARD 11)
 
 add_definitions(-D_GNU_SOURCE)
 
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    add_compile_options(
+        -Wall
+        -Wextra
+        -fstack-protector-strong
+        -D_FORTIFY_SOURCE=2
+        -O2
+    )
+endif()
+
+option(ENABLE_SANITIZERS "Enable Address and UndefinedBehavior sanitizers" OFF)
+if(ENABLE_SANITIZERS)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 if(NOT DEFINED SENTRIX_VERSION_STRING)
     set(SENTRIX_VERSION_STRING "v${PROJECT_VERSION}")
 endif()
