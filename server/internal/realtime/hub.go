@@ -131,10 +131,10 @@ func HandleWebSocket(hub *Hub, store *TicketStore) http.HandlerFunc {
 			// Validate Origin against host to prevent Cross-Site WebSocket Hijacking (CSWSH)
 			opts.OriginPatterns = []string{
 				r.Host,
-				"http://" + r.Host,
-				"https://" + r.Host,
-				"localhost*",
-				"127.0.0.1*",
+				"localhost",
+				"localhost:*",
+				"127.0.0.1",
+				"127.0.0.1:*",
 			}
 		}
 

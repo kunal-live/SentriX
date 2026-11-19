@@ -101,6 +101,8 @@ func ValidateAccessToken(tokenString string) (*AccessTokenClaims, error) {
 			return jwtSecret(), nil
 		},
 		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithIssuer("sentrix"),
+		jwt.WithAudience("sentrix-api"),
 	)
 
 	if err != nil {

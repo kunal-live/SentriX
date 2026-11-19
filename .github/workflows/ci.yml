@@ -64,17 +64,10 @@ jobs:
       - name: Install build tools and OpenSSL
         run: sudo apt-get update && sudo apt-get install -y build-essential cmake libssl-dev
 
-      - name: Ensure cJSON exists
+      - name: Verify vendored cJSON source integrity
         run: |
-          if [ ! -f agent/src/core/cJSON.c ]; then
-            curl -o agent/src/core/cJSON.c \
-              https://raw.githubusercontent.com/DaveGamble/cJSON/master/cJSON.c
-          fi
-
-          if [ ! -f agent/src/core/cJSON.h ]; then
-            curl -o agent/src/core/cJSON.h \
-              https://raw.githubusercontent.com/DaveGamble/cJSON/master/cJSON.h
-          fi
+          test -f agent/src/core/cJSON.c || { echo "Missing vendored cJSON.c"; exit 1; }
+          test -f agent/src/core/cJSON.h || { echo "Missing vendored cJSON.h"; exit 1; }
 
       - name: Configure agent with memory safety checks
         run: cmake -S agent -B agent/build -DCMAKE_BUILD_TYPE=Release -DENABLE_SANITIZERS=ON

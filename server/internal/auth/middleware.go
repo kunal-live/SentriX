@@ -57,6 +57,23 @@ func GetUser(r *http.Request) *AuthUser {
 	return &user
 }
 
+var roleRank = map[string]int{
+	"VIEWER":   1,
+	"OPERATOR": 2,
+	"ADMIN":    3,
+}
+
+func hasRolePermission(userRole string, requiredRoles []string) bool {
+	userWeight := roleRank[userRole]
+	for _, req := range requiredRoles {
+		reqWeight := roleRank[req]
+		if userRole == req || (reqWeight > 0 && userWeight >= reqWeight) {
+			return true
+		}
+	}
+	return false
+}
+
 func RequireRole(roles ...string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,15 +84,7 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 				return
 			}
 
-			allowed := false
-			for _, role := range roles {
-				if user.Role == role {
-					allowed = true
-					break
-				}
-			}
-
-			if !allowed {
+			if !hasRolePermission(user.Role, roles) {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
