@@ -1,4 +1,7 @@
-export const API_BASE = 'http://localhost:8080/api/v1';
+export const API_BASE =
+  typeof window !== 'undefined' && window.location.origin && !window.location.origin.includes(':3000')
+    ? `${window.location.origin}/api/v1`
+    : 'http://localhost:8080/api/v1';
 
 const ACCESS_TOKEN_KEY = 'sentrix_access_token';
 const REFRESH_TOKEN_KEY = 'sentrix_refresh_token';
