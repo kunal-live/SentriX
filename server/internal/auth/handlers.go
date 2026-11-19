@@ -73,6 +73,19 @@ func insertRefreshToken(ctx context.Context, tx pgx.Tx, userID string) (string, 
 	return raw, id.String(), nil
 }
 
+func setRefreshTokenCookie(w http.ResponseWriter, r *http.Request, token string, maxAge int) {
+	isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	http.SetCookie(w, &http.Cookie{
+		Name:     "sentrix_refresh_token",
+		Value:    token,
+		Path:     "/api/v1/auth",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteStrictMode,
+	})
+}
+
 // POST /api/v1/auth/login
 func HandleLogin(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +190,8 @@ func HandleLogin(pool *pgxpool.Pool) http.HandlerFunc {
 			ExpiresIn:    int64(time.Until(expiresAt).Seconds()),
 		}
 
+		setRefreshTokenCookie(w, r, refreshToken, 7*86400)
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
@@ -186,10 +201,12 @@ func HandleLogin(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleRefresh(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req refreshRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid JSON", http.StatusBadRequest)
-			return
+		if req.RefreshToken == "" {
+			if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil {
+				req.RefreshToken = cookie.Value
+			}
 		}
 
 		if req.RefreshToken == "" {
@@ -292,6 +309,8 @@ func HandleRefresh(pool *pgxpool.Pool) http.HandlerFunc {
 			ExpiresIn:    int64(time.Until(expiresAccessToken).Seconds()),
 		}
 
+		setRefreshTokenCookie(w, r, newRefreshToken, 7*86400)
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
@@ -301,10 +320,12 @@ func HandleRefresh(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleLogout(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req refreshRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
 
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid JSON", http.StatusBadRequest)
-			return
+		if req.RefreshToken == "" {
+			if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil {
+				req.RefreshToken = cookie.Value
+			}
 		}
 
 		if req.RefreshToken == "" {
@@ -326,6 +347,7 @@ func HandleLogout(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		setRefreshTokenCookie(w, r, "", -1)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

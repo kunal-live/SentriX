@@ -3,50 +3,61 @@ export const API_BASE =
     ? `${window.location.origin}/api/v1`
     : 'http://localhost:8080/api/v1';
 
-const ACCESS_TOKEN_KEY = 'sentrix_access_token';
-const REFRESH_TOKEN_KEY = 'sentrix_refresh_token';
+// Secure in-memory access token storage (protects against XSS localStorage theft)
+let inMemoryAccessToken: string | null = null;
 
 export function getAccessToken(): string | null {
-  return localStorage.getItem(ACCESS_TOKEN_KEY);
+  return inMemoryAccessToken;
 }
 
 export function getRefreshToken(): string | null {
-  return localStorage.getItem(REFRESH_TOKEN_KEY);
+  // Refresh token is maintained securely in an httpOnly SameSite cookie by the browser
+  return null;
 }
 
-export function setTokens(accessToken: string, refreshToken: string): void {
-  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
-  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+export function setTokens(accessToken: string, _refreshToken?: string): void {
+  inMemoryAccessToken = accessToken;
+
+  // Clean up any legacy or deprecated tokens from localStorage to prevent XSS exfiltration
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.removeItem('sentrix_access_token');
+      localStorage.removeItem('sentrix_refresh_token');
+    } catch {
+      // Ignore storage errors in restricted contexts
+    }
+  }
 }
 
 export function clearTokens(): void {
-  localStorage.removeItem(ACCESS_TOKEN_KEY);
-  localStorage.removeItem(REFRESH_TOKEN_KEY);
+  inMemoryAccessToken = null;
+
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      localStorage.removeItem('sentrix_access_token');
+      localStorage.removeItem('sentrix_refresh_token');
+    } catch {
+      // Ignore
+    }
+  }
 }
 
 let activeRefreshPromise: Promise<boolean> | null = null;
 
-async function refreshSession(): Promise<boolean> {
+export async function refreshSession(): Promise<boolean> {
   if (activeRefreshPromise) {
     return activeRefreshPromise;
   }
 
   activeRefreshPromise = (async () => {
-    const refreshToken = getRefreshToken();
-
-    if (!refreshToken) {
-      return false;
-    }
-
     try {
       const res = await fetch(`${API_BASE}/auth/refresh`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          refresh_token: refreshToken,
-        }),
+        body: JSON.stringify({}),
       });
 
       if (!res.ok) {
@@ -55,9 +66,13 @@ async function refreshSession(): Promise<boolean> {
       }
 
       const data = await res.json();
+      if (data?.access_token) {
+        setTokens(data.access_token, data.refresh_token);
+        return true;
+      }
 
-      setTokens(data.access_token, data.refresh_token);
-      return true;
+      clearTokens();
+      return false;
     } catch {
       return false;
     } finally {
@@ -80,6 +95,7 @@ export async function publicFetch<T>(
 
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'include',
     headers,
   });
 
@@ -100,7 +116,7 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const headers = new Headers(options.headers);
 
-  const accessToken = getAccessToken();
+  let accessToken = getAccessToken();
 
   if (accessToken) {
     headers.set('Authorization', `Bearer ${accessToken}`);
@@ -112,21 +128,22 @@ export async function apiFetch<T>(
 
   let res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'include',
     headers,
   });
 
-  if (res.status === 401 && getRefreshToken()) {
+  if (res.status === 401) {
     const refreshed = await refreshSession();
 
     if (refreshed) {
-      const newAccessToken = getAccessToken();
-
-      if (newAccessToken) {
-        headers.set('Authorization', `Bearer ${newAccessToken}`);
+      accessToken = getAccessToken();
+      if (accessToken) {
+        headers.set('Authorization', `Bearer ${accessToken}`);
       }
 
       res = await fetch(`${API_BASE}${path}`, {
         ...options,
+        credentials: 'include',
         headers,
       });
     }

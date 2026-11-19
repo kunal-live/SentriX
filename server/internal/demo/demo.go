@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -460,7 +461,7 @@ func initStore() {
 				ID:        "chan-webhook-demo",
 				Name:      "DevOps Incident Webhook",
 				Type:      "WEBHOOK",
-				Config:    map[string]any{"url": "https://hooks.slack.com/services/demo/sentrix"},
+				Config:    map[string]any{"url": "https://example.com/api/v1/webhook/demo"},
 				Enabled:   true,
 				CreatedAt: now.Add(-120 * time.Hour),
 			},
@@ -569,42 +570,135 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 				Email    string `json:"email"`
 				Password string `json:"password"`
 			}
-			_ = json.NewDecoder(r.Body).Decode(&body)
-
-			if body.Email == "" {
-				body.Email = "admin@sentrix.local"
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "invalid request body", http.StatusBadRequest)
+				return
 			}
 
-			token, _, err := auth.GenerateAccessToken(uuid.New().String(), body.Email, "ADMIN")
+			body.Email = strings.TrimSpace(body.Email)
+			body.Password = strings.TrimSpace(body.Password)
+
+			if body.Email == "" || body.Password == "" {
+				http.Error(w, "email and password are required", http.StatusBadRequest)
+				return
+			}
+
+			demoPassword := os.Getenv("SENTRIX_DEMO_PASSWORD")
+			if demoPassword == "" {
+				demoPassword = "admin12345"
+			}
+
+			if body.Password != demoPassword {
+				http.Error(w, "invalid email or password", http.StatusUnauthorized)
+				return
+			}
+
+			var matchedUser *DemoUser
+			store.mu.RLock()
+			for _, u := range store.users {
+				if strings.EqualFold(u.Email, body.Email) {
+					matchedUser = u
+					break
+				}
+			}
+			store.mu.RUnlock()
+
+			if matchedUser == nil {
+				if strings.EqualFold(body.Email, "admin@sentrix.local") {
+					matchedUser = &DemoUser{
+						ID:        "usr-admin-demo",
+						Email:     "admin@sentrix.local",
+						Role:      "ADMIN",
+						Status:    "ACTIVE",
+						CreatedAt: time.Now(),
+					}
+				} else {
+					http.Error(w, "invalid email or password", http.StatusUnauthorized)
+					return
+				}
+			}
+
+			token, expiresAt, err := auth.GenerateAccessToken(matchedUser.ID, matchedUser.Email, matchedUser.Role)
 			if err != nil {
 				http.Error(w, "token error", http.StatusInternalServerError)
 				return
 			}
 
+			refreshToken := "demo-refresh-token-" + uuid.New().String()
+			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+			http.SetCookie(w, &http.Cookie{
+				Name:     "sentrix_refresh_token",
+				Value:    refreshToken,
+				Path:     "/api/v1/auth",
+				MaxAge:   7 * 86400,
+				HttpOnly: true,
+				Secure:   isSecure,
+				SameSite: http.SameSiteStrictMode,
+			})
+
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"user": map[string]any{
-					"id":    "usr-admin-demo",
-					"email": body.Email,
-					"role":  "ADMIN",
+					"id":    matchedUser.ID,
+					"email": matchedUser.Email,
+					"role":  matchedUser.Role,
 				},
 				"access_token":  token,
-				"refresh_token": "demo-refresh-token-" + uuid.New().String(),
-				"expires_in":    900,
+				"refresh_token": refreshToken,
+				"expires_in":    int64(time.Until(expiresAt).Seconds()),
 			})
 		})
 
 		r.Post("/refresh", func(w http.ResponseWriter, r *http.Request) {
-			token, _, _ := auth.GenerateAccessToken(uuid.New().String(), "admin@sentrix.local", "ADMIN")
+			var body struct {
+				RefreshToken string `json:"refresh_token"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+
+			refreshToken := body.RefreshToken
+			if refreshToken == "" {
+				if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil {
+					refreshToken = cookie.Value
+				}
+			}
+
+			if refreshToken == "" || !strings.HasPrefix(refreshToken, "demo-refresh-token-") {
+				http.Error(w, "invalid or missing refresh token", http.StatusUnauthorized)
+				return
+			}
+
+			token, expiresAt, _ := auth.GenerateAccessToken("usr-admin-demo", "admin@sentrix.local", "ADMIN")
+			newRefreshToken := "demo-refresh-token-" + uuid.New().String()
+			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+			http.SetCookie(w, &http.Cookie{
+				Name:     "sentrix_refresh_token",
+				Value:    newRefreshToken,
+				Path:     "/api/v1/auth",
+				MaxAge:   7 * 86400,
+				HttpOnly: true,
+				Secure:   isSecure,
+				SameSite: http.SameSiteStrictMode,
+			})
+
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"access_token":  token,
-				"refresh_token": "demo-refresh-token-" + uuid.New().String(),
-				"expires_in":    900,
+				"refresh_token": newRefreshToken,
+				"expires_in":    int64(time.Until(expiresAt).Seconds()),
 			})
 		})
 
 		r.Post("/logout", func(w http.ResponseWriter, r *http.Request) {
+			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+			http.SetCookie(w, &http.Cookie{
+				Name:     "sentrix_refresh_token",
+				Value:    "",
+				Path:     "/api/v1/auth",
+				MaxAge:   -1,
+				HttpOnly: true,
+				Secure:   isSecure,
+				SameSite: http.SameSiteStrictMode,
+			})
 			w.WriteHeader(http.StatusNoContent)
 		})
 

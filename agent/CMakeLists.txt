@@ -48,7 +48,18 @@ target_compile_definitions(sentrix-agent PRIVATE
     SENTRIX_VERSION_STRING="${SENTRIX_VERSION_STRING}"
 )
 
+find_package(OpenSSL QUIET)
+
 target_link_libraries(sentrix-agent m)
+
+if(OPENSSL_FOUND)
+    message(STATUS "OpenSSL found: enabling secure TLS transport for sentrix-agent")
+    target_compile_definitions(sentrix-agent PRIVATE SENTRIX_ENABLE_TLS)
+    target_include_directories(sentrix-agent PRIVATE ${OPENSSL_INCLUDE_DIR})
+    target_link_libraries(sentrix-agent OpenSSL::SSL OpenSSL::Crypto)
+else()
+    message(STATUS "OpenSSL not found: agent building without native TLS support")
+endif()
 
 install(TARGETS sentrix-agent RUNTIME DESTINATION bin)
 

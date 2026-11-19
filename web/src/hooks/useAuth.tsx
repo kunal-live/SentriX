@@ -13,6 +13,7 @@ import {
   getAccessToken,
   getRefreshToken,
   publicFetch,
+  refreshSession,
   setTokens,
 } from '../lib/api';
 
@@ -45,8 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     async function loadMe() {
       if (!getAccessToken()) {
-        setLoading(false);
-        return;
+        const restored = await refreshSession();
+        if (!restored) {
+          setLoading(false);
+          return;
+        }
       }
 
       try {
@@ -77,23 +81,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
-    const refreshToken = getRefreshToken();
-
-    if (refreshToken) {
-      try {
-        await publicFetch('/auth/logout', {
-          method: 'POST',
-          body: JSON.stringify({
-            refresh_token: refreshToken,
-          }),
-        });
-      } catch {
-        // Ignore logout errors.
-      }
+    try {
+      await publicFetch('/auth/logout', {
+        method: 'POST',
+        body: JSON.stringify({}),
+      });
+    } catch {
+      // Ignore logout errors.
+    } finally {
+      clearTokens();
+      setUser(null);
     }
-
-    clearTokens();
-    setUser(null);
   }
 
   return (

@@ -13,6 +13,67 @@
 #include "collector.h"
 #include "cJSON.h"
 
+#ifdef SENTRIX_ENABLE_TLS
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+#include <openssl/x509v3.h>
+
+static SSL_CTX *g_ssl_ctx = NULL;
+
+static SSL_CTX *get_ssl_context(void) {
+    if (g_ssl_ctx) {
+        return g_ssl_ctx;
+    }
+
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_all_algorithms();
+
+    const SSL_METHOD *method = TLS_client_method();
+    g_ssl_ctx = SSL_CTX_new(method);
+    if (!g_ssl_ctx) {
+        fprintf(stderr, "TLS Error: Failed to initialize OpenSSL context\n");
+        return NULL;
+    }
+
+    // Enforce TLS 1.2 minimum protocol version
+#if defined(TLS1_2_VERSION)
+    SSL_CTX_set_min_proto_version(g_ssl_ctx, TLS1_2_VERSION);
+#endif
+
+    // Load default trusted system CA bundles
+    if (SSL_CTX_set_default_verify_paths(g_ssl_ctx) != 1) {
+        fprintf(stderr, "TLS Warning: Could not load default system CA store\n");
+    }
+
+    // Support custom enterprise CA certificate path
+    const char *custom_ca = getenv("SENTRIX_CA_CERT");
+    if (!custom_ca) {
+        if (access("/etc/sentrix/ca.crt", R_OK) == 0) {
+            custom_ca = "/etc/sentrix/ca.crt";
+        }
+    }
+
+    if (custom_ca && access(custom_ca, R_OK) == 0) {
+        if (SSL_CTX_load_verify_locations(g_ssl_ctx, custom_ca, NULL) == 1) {
+            printf("TLS: Loaded custom CA certificate from %s\n", custom_ca);
+        } else {
+            fprintf(stderr, "TLS Warning: Failed to load CA from %s\n", custom_ca);
+        }
+    }
+
+    const char *skip_verify = getenv("SENTRIX_INSECURE_SKIP_VERIFY");
+    if (skip_verify && (strcmp(skip_verify, "1") == 0 || strcmp(skip_verify, "true") == 0)) {
+        fprintf(stderr, "SECURITY WARNING: SENTRIX_INSECURE_SKIP_VERIFY is active! Server certificate will NOT be verified.\n");
+        SSL_CTX_set_verify(g_ssl_ctx, SSL_VERIFY_NONE, NULL);
+    } else {
+        SSL_CTX_set_verify(g_ssl_ctx, SSL_VERIFY_PEER, NULL);
+    }
+
+    return g_ssl_ctx;
+}
+#endif
+
 void build_telemetry_json(char *buffer, size_t size, const char *agent_id, uint64_t seq, const SystemMetrics *m) {
     if (!buffer || size == 0) return;
 
@@ -89,9 +150,39 @@ int http_request(
     char *response_body,
     size_t response_size
 ) {
+    // Determine whether to use TLS encryption
+    int use_tls = 0;
+    const char *env_tls = getenv("SENTRIX_USE_TLS");
+    if (port == 443 || port == 8443 || (env_tls && (strcmp(env_tls, "1") == 0 || strcasecmp(env_tls, "true") == 0))) {
+        use_tls = 1;
+    }
+
+    // Check strict transport enforcement policy
+    const char *enforce_tls = getenv("SENTRIX_ENFORCE_TLS");
+    int tls_enforced = (enforce_tls && (strcmp(enforce_tls, "1") == 0 || strcasecmp(enforce_tls, "true") == 0));
+
+    if (!use_tls && tls_enforced) {
+        fprintf(stderr, "FATAL SECURITY ERROR: Plaintext HTTP blocked by SENTRIX_ENFORCE_TLS policy. Connect via HTTPS/TLS.\n");
+        return 0;
+    }
+
+    if (!use_tls && auth_token && auth_token[0] != '\0') {
+        static int warned_plaintext = 0;
+        if (!warned_plaintext) {
+            fprintf(stderr, "[Security Warning] Agent auth credentials transmitted over unencrypted HTTP (port %d). Configure SENTRIX_USE_TLS=true for HTTPS.\n", port);
+            warned_plaintext = 1;
+        }
+    }
+
+#ifndef SENTRIX_ENABLE_TLS
+    if (use_tls) {
+        fprintf(stderr, "FATAL SECURITY ERROR: HTTPS requested for port %d, but sentrix-agent was compiled without OpenSSL TLS support.\n", port);
+        return 0;
+    }
+#endif
+
     struct addrinfo hints, *res;
     memset(&hints, 0, sizeof(hints));
-
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
@@ -121,6 +212,50 @@ int http_request(
     }
 
     freeaddrinfo(res);
+
+#ifdef SENTRIX_ENABLE_TLS
+    SSL *ssl = NULL;
+    if (use_tls) {
+        SSL_CTX *ctx = get_ssl_context();
+        if (!ctx) {
+            close(sock);
+            return 0;
+        }
+
+        ssl = SSL_new(ctx);
+        if (!ssl) {
+            close(sock);
+            return 0;
+        }
+
+        SSL_set_fd(ssl, sock);
+        // Set Server Name Indication (SNI)
+        SSL_set_tlsext_host_name(ssl, host);
+
+        if (SSL_connect(ssl) <= 0) {
+            unsigned long err = ERR_get_error();
+            char err_buf[256];
+            ERR_error_string_n(err, err_buf, sizeof(err_buf));
+            fprintf(stderr, "TLS Handshake failed to %s:%d: %s\n", host, port, err_buf);
+            SSL_free(ssl);
+            close(sock);
+            return 0;
+        }
+
+        // Verify certificate if peer validation is required
+        if (SSL_get_verify_mode(ssl) != SSL_VERIFY_NONE) {
+            long verify_res = SSL_get_verify_result(ssl);
+            if (verify_res != X509_V_OK) {
+                fprintf(stderr, "TLS Verification Failed: code %ld (%s)\n",
+                        verify_res, X509_verify_cert_error_string(verify_res));
+                SSL_shutdown(ssl);
+                SSL_free(ssl);
+                close(sock);
+                return 0;
+            }
+        }
+    }
+#endif
 
     char request[8192];
     int body_len = body ? (int)strlen(body) : 0;
@@ -161,13 +296,36 @@ int http_request(
         );
     }
 
+    // Write request over TLS or raw TCP
+#ifdef SENTRIX_ENABLE_TLS
+    if (use_tls && ssl) {
+        SSL_write(ssl, request, (int)strlen(request));
+    } else {
+        send(sock, request, strlen(request), 0);
+    }
+#else
     send(sock, request, strlen(request), 0);
+#endif
 
     char buffer[8192];
     size_t total = 0;
-    ssize_t n;
+    ssize_t n = 0;
 
-    while ((n = recv(sock, buffer, sizeof(buffer), 0)) > 0) {
+    while (1) {
+#ifdef SENTRIX_ENABLE_TLS
+        if (use_tls && ssl) {
+            n = SSL_read(ssl, buffer, sizeof(buffer));
+        } else {
+            n = recv(sock, buffer, sizeof(buffer), 0);
+        }
+#else
+        n = recv(sock, buffer, sizeof(buffer), 0);
+#endif
+
+        if (n <= 0) {
+            break;
+        }
+
         if (total + n < response_size) {
             memcpy(response_body + total, buffer, n);
         }
@@ -178,6 +336,13 @@ int http_request(
             break;
         }
     }
+
+#ifdef SENTRIX_ENABLE_TLS
+    if (use_tls && ssl) {
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
+    }
+#endif
 
     close(sock);
 
@@ -191,7 +356,6 @@ int http_request(
     }
 
     char *header_end = strstr(response_body, "\r\n\r\n");
-
     if (header_end) {
         size_t header_len = (size_t)(header_end - response_body) + 4;
         size_t body_received = total > header_len ? total - header_len : 0;

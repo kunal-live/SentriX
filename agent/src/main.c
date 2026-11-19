@@ -22,6 +22,7 @@ typedef struct {
     int server_port;
     char agent_id[CONFIG_MAX_LEN];
     char auth_token[CONFIG_MAX_LEN];
+    int use_tls;
 } AgentConfig;
 
 static void trim_inplace(char *str) {
@@ -76,6 +77,8 @@ static void load_config_file(const char *filepath, AgentConfig *cfg) {
             strncpy(cfg->agent_id, val, sizeof(cfg->agent_id) - 1);
         } else if (strcmp(key, "SENTRIX_AGENT_CREDENTIAL") == 0 && val[0] != '\0') {
             strncpy(cfg->auth_token, val, sizeof(cfg->auth_token) - 1);
+        } else if (strcmp(key, "SENTRIX_USE_TLS") == 0 && val[0] != '\0') {
+            cfg->use_tls = (strcmp(val, "1") == 0 || strcasecmp(val, "true") == 0);
         }
     }
 
@@ -103,6 +106,11 @@ static void load_env_vars(AgentConfig *cfg) {
     if (env_cred && env_cred[0] != '\0') {
         strncpy(cfg->auth_token, env_cred, sizeof(cfg->auth_token) - 1);
     }
+
+    const char *env_tls = getenv("SENTRIX_USE_TLS");
+    if (env_tls && env_tls[0] != '\0') {
+        cfg->use_tls = (strcmp(env_tls, "1") == 0 || strcasecmp(env_tls, "true") == 0);
+    }
 }
 
 static void maybe_drop_privileges(void) {
@@ -127,6 +135,7 @@ static void print_usage(const char *prog) {
     printf("  -c <file>      Path to config file (default: /etc/sentrix/agent.env)\n");
     printf("  -h <host>      SentriX server host\n");
     printf("  -p <port>      SentriX server port (default: 8080)\n");
+    printf("  -s, --tls      Enforce TLS/HTTPS transport (default on port 443)\n");
     printf("  -i <agent_id>  Agent UUID\n");
     printf("  --help         Show this help message\n");
 }
@@ -169,13 +178,24 @@ int main(int argc, char *argv[]) {
             config.server_port = atoi(argv[++i]);
         } else if (strcmp(argv[i], "-i") == 0 && i + 1 < argc) {
             strncpy(config.agent_id, argv[++i], sizeof(config.agent_id) - 1);
+        } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--tls") == 0) {
+            config.use_tls = 1;
         } else if (strcmp(argv[i], "-t") == 0) {
             fprintf(stderr, "SECURITY ERROR: Passing credential tokens via -t CLI arguments is disabled to prevent exposure in process lists (/proc/<pid>/cmdline). Configure SENTRIX_AGENT_CREDENTIAL in %s instead.\n", config_file);
             return 1;
         }
     }
 
-    printf("Target Server: %s:%d\n", config.server_host, config.server_port);
+    if (config.server_port == 443 || config.server_port == 8443 || config.use_tls) {
+        config.use_tls = 1;
+#ifndef _WIN32
+        setenv("SENTRIX_USE_TLS", "true", 1);
+#else
+        _putenv("SENTRIX_USE_TLS=true");
+#endif
+    }
+
+    printf("Target Server: %s:%d (TLS: %s)\n", config.server_host, config.server_port, config.use_tls ? "ENABLED" : "DISABLED");
     printf("Agent ID:      %s\n", config.agent_id);
 
     maybe_drop_privileges();
