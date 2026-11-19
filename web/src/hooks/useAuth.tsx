@@ -26,7 +26,7 @@ export interface AuthUser {
 interface LoginResponse {
   user: AuthUser;
   access_token: string;
-  refresh_token: string;
+  refresh_token?: string;
   expires_in: number;
 }
 
@@ -76,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }),
     });
 
-    setTokens(response.access_token, response.refresh_token);
+    setTokens(response.access_token);
     setUser(response.user);
   }
 

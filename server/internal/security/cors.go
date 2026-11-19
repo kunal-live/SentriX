@@ -22,7 +22,7 @@ func CORSMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		if isOriginAllowed(origin, r.Host, allowedOrigins, isProd) {
+		if isOriginAllowed(origin, r, allowedOrigins, isProd) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
@@ -70,7 +70,7 @@ func parseAllowedOrigins() map[string]bool {
 	return allowed
 }
 
-func isOriginAllowed(origin string, requestHost string, allowedOrigins map[string]bool, isProd bool) bool {
+func isOriginAllowed(origin string, r *http.Request, allowedOrigins map[string]bool, isProd bool) bool {
 	originTrimmed := strings.TrimRight(strings.TrimSpace(origin), "/")
 
 	// Direct allowlist match
@@ -83,9 +83,21 @@ func isOriginAllowed(origin string, requestHost string, allowedOrigins map[strin
 		return false
 	}
 
-	// Check if origin host matches request Host (same host, different port/scheme)
-	if requestHost != "" && parsed.Host == requestHost {
-		return true
+	reqScheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		reqScheme = "https"
+	}
+
+	// In production, reject unencrypted HTTP origin when server runs over HTTPS
+	if isProd && reqScheme == "https" && parsed.Scheme != "https" {
+		return false
+	}
+
+	// Check if origin host matches request Host, enforcing compatible scheme
+	if r.Host != "" && parsed.Host == r.Host {
+		if !isProd || parsed.Scheme == reqScheme {
+			return true
+		}
 	}
 
 	// In non-production only, allow standard local dev servers

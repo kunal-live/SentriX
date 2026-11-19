@@ -33,7 +33,7 @@ func AgentAuthMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			hashed := hashCredential(token)
 
 			var agentID string
-			err := pool.QueryRow(r.Context(), "SELECT id FROM agents WHERE (credential_hash = $1 OR credential_hash = $2) AND status = 'ACTIVE'", hashed, token).Scan(&agentID)
+			err := pool.QueryRow(r.Context(), "SELECT id FROM agents WHERE credential_hash = $1 AND status = 'ACTIVE'", hashed).Scan(&agentID)
 			if err != nil {
 				http.Error(w, "Invalid credential", http.StatusUnauthorized)
 				return

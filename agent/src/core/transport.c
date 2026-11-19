@@ -10,6 +10,8 @@
 #include <sys/time.h>
 #include <netdb.h>
 #include <time.h>
+#include <fcntl.h>
+#include <errno.h>
 #include "collector.h"
 #include "cJSON.h"
 
@@ -150,33 +152,26 @@ int http_request(
     char *response_body,
     size_t response_size
 ) {
-    // Determine whether to use TLS encryption
-    int use_tls = 0;
+    // TLS is enforced by default. Plaintext HTTP transport is strictly blocked unless explicitly allowed by SENTRIX_ALLOW_INSECURE_HTTP=1.
+    const char *allow_insecure_env = getenv("SENTRIX_ALLOW_INSECURE_HTTP");
+    int allow_insecure = (allow_insecure_env && (strcmp(allow_insecure_env, "1") == 0 || strcasecmp(allow_insecure_env, "true") == 0));
+
+    int use_tls = 1;
     const char *env_tls = getenv("SENTRIX_USE_TLS");
-    if (port == 443 || port == 8443 || (env_tls && (strcmp(env_tls, "1") == 0 || strcasecmp(env_tls, "true") == 0))) {
-        use_tls = 1;
+    if (env_tls && (strcmp(env_tls, "0") == 0 || strcasecmp(env_tls, "false") == 0)) {
+        use_tls = 0;
+    } else if (allow_insecure && port != 443 && port != 8443 && !env_tls) {
+        use_tls = 0;
     }
 
-    // Check strict transport enforcement policy
-    const char *enforce_tls = getenv("SENTRIX_ENFORCE_TLS");
-    int tls_enforced = (enforce_tls && (strcmp(enforce_tls, "1") == 0 || strcasecmp(enforce_tls, "true") == 0));
-
-    if (!use_tls && tls_enforced) {
-        fprintf(stderr, "FATAL SECURITY ERROR: Plaintext HTTP blocked by SENTRIX_ENFORCE_TLS policy. Connect via HTTPS/TLS.\n");
+    if (!use_tls && auth_token && auth_token[0] != '\0' && !allow_insecure) {
+        fprintf(stderr, "FATAL SECURITY ERROR: Plaintext HTTP transport with credentials blocked! TLS is required by default. To override for local development only, set SENTRIX_ALLOW_INSECURE_HTTP=1.\n");
         return 0;
-    }
-
-    if (!use_tls && auth_token && auth_token[0] != '\0') {
-        static int warned_plaintext = 0;
-        if (!warned_plaintext) {
-            fprintf(stderr, "[Security Warning] Agent auth credentials transmitted over unencrypted HTTP (port %d). Configure SENTRIX_USE_TLS=true for HTTPS.\n", port);
-            warned_plaintext = 1;
-        }
     }
 
 #ifndef SENTRIX_ENABLE_TLS
     if (use_tls) {
-        fprintf(stderr, "FATAL SECURITY ERROR: HTTPS requested for port %d, but sentrix-agent was compiled without OpenSSL TLS support.\n", port);
+        fprintf(stderr, "FATAL SECURITY ERROR: HTTPS required for port %d, but sentrix-agent was compiled without OpenSSL TLS support.\n", port);
         return 0;
     }
 #endif
@@ -205,11 +200,49 @@ int http_request(
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof(tv));
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&tv, sizeof(tv));
 
+#ifndef _WIN32
+    int flags = fcntl(sock, F_GETFL, 0);
+    if (flags >= 0) {
+        fcntl(sock, F_SETFL, flags | O_NONBLOCK);
+    }
+
+    int conn_rc = connect(sock, res->ai_addr, res->ai_addrlen);
+    if (conn_rc < 0) {
+        if (errno == EINPROGRESS) {
+            fd_set wfds;
+            FD_ZERO(&wfds);
+            FD_SET(sock, &wfds);
+            struct timeval tv_conn = { .tv_sec = 6, .tv_usec = 0 };
+            int sel = select(sock + 1, NULL, &wfds, NULL, &tv_conn);
+            if (sel <= 0) {
+                close(sock);
+                freeaddrinfo(res);
+                return 0;
+            }
+            int so_error = 0;
+            socklen_t len = sizeof(so_error);
+            getsockopt(sock, SOL_SOCKET, SO_ERROR, &so_error, &len);
+            if (so_error != 0) {
+                close(sock);
+                freeaddrinfo(res);
+                return 0;
+            }
+        } else {
+            close(sock);
+            freeaddrinfo(res);
+            return 0;
+        }
+    }
+    if (flags >= 0) {
+        fcntl(sock, F_SETFL, flags);
+    }
+#else
     if (connect(sock, res->ai_addr, res->ai_addrlen) < 0) {
         close(sock);
         freeaddrinfo(res);
         return 0;
     }
+#endif
 
     freeaddrinfo(res);
 
@@ -231,6 +264,14 @@ int http_request(
         SSL_set_fd(ssl, sock);
         // Set Server Name Indication (SNI)
         SSL_set_tlsext_host_name(ssl, host);
+
+        // Enforce TLS certificate hostname verification
+        if (SSL_set1_host(ssl, host) != 1) {
+            fprintf(stderr, "TLS Error: Failed to configure hostname verification for %s\n", host);
+            SSL_free(ssl);
+            close(sock);
+            return 0;
+        }
 
         if (SSL_connect(ssl) <= 0) {
             unsigned long err = ERR_get_error();
@@ -296,16 +337,36 @@ int http_request(
         );
     }
 
-    // Write request over TLS or raw TCP
+    // Write full request handling partial writes
+    size_t req_len = strlen(request);
+    size_t written = 0;
+    while (written < req_len) {
+        int w = 0;
 #ifdef SENTRIX_ENABLE_TLS
-    if (use_tls && ssl) {
-        SSL_write(ssl, request, (int)strlen(request));
-    } else {
-        send(sock, request, strlen(request), 0);
-    }
+        if (use_tls && ssl) {
+            w = SSL_write(ssl, request + written, (int)(req_len - written));
+        } else {
+            w = (int)send(sock, request + written, req_len - written, 0);
+        }
 #else
-    send(sock, request, strlen(request), 0);
+        w = (int)send(sock, request + written, req_len - written, 0);
 #endif
+        if (w <= 0) {
+            break;
+        }
+        written += (size_t)w;
+    }
+
+    if (written < req_len) {
+#ifdef SENTRIX_ENABLE_TLS
+        if (use_tls && ssl) {
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+        }
+#endif
+        close(sock);
+        return 0;
+    }
 
     char buffer[8192];
     size_t total = 0;

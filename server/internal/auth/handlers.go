@@ -30,10 +30,9 @@ type userResponse struct {
 }
 
 type authResponse struct {
-	User         userResponse `json:"user"`
-	AccessToken  string       `json:"access_token"`
-	RefreshToken string       `json:"refresh_token"`
-	ExpiresIn    int64        `json:"expires_in"`
+	User        userResponse `json:"user"`
+	AccessToken string       `json:"access_token"`
+	ExpiresIn   int64        `json:"expires_in"`
 }
 
 func hashRefreshToken(raw string) string {
@@ -185,9 +184,8 @@ func HandleLogin(pool *pgxpool.Pool) http.HandlerFunc {
 				Email: email,
 				Role:  role,
 			},
-			AccessToken:  accessToken,
-			RefreshToken: refreshToken,
-			ExpiresIn:    int64(time.Until(expiresAt).Seconds()),
+			AccessToken: accessToken,
+			ExpiresIn:   int64(time.Until(expiresAt).Seconds()),
 		}
 
 		setRefreshTokenCookie(w, r, refreshToken, 7*86400)
@@ -304,9 +302,8 @@ func HandleRefresh(pool *pgxpool.Pool) http.HandlerFunc {
 				Email: email,
 				Role:  role,
 			},
-			AccessToken:  accessToken,
-			RefreshToken: newRefreshToken,
-			ExpiresIn:    int64(time.Until(expiresAccessToken).Seconds()),
+			AccessToken: accessToken,
+			ExpiresIn:   int64(time.Until(expiresAccessToken).Seconds()),
 		}
 
 		setRefreshTokenCookie(w, r, newRefreshToken, 7*86400)
@@ -421,11 +418,43 @@ func HandleChangePassword(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		_, err = pool.Exec(ctx, `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, newHash, actor.ID)
+		tx, err := pool.Begin(ctx)
 		if err != nil {
 			http.Error(w, "database error", http.StatusInternalServerError)
 			return
 		}
+		defer tx.Rollback(ctx)
+
+		_, err = tx.Exec(ctx, `UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2`, newHash, actor.ID)
+		if err != nil {
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+		}
+
+		// Revoke all existing active refresh tokens to invalidate other sessions/devices
+		_, err = tx.Exec(ctx, `
+			UPDATE refresh_tokens
+			SET revoked_at = NOW()
+			WHERE user_id = $1 AND revoked_at IS NULL
+		`, actor.ID)
+		if err != nil {
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+		}
+
+		// Issue a fresh rotated refresh token for the current authenticated user session
+		newRefreshToken, _, err := insertRefreshToken(ctx, tx, actor.ID)
+		if err != nil {
+			http.Error(w, "failed to rotate session token", http.StatusInternalServerError)
+			return
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+		}
+
+		setRefreshTokenCookie(w, r, newRefreshToken, 7*86400)
 
 		WriteAudit(
 			ctx,

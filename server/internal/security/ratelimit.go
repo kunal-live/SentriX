@@ -3,6 +3,7 @@ package security
 import (
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -95,16 +96,59 @@ func IPKey(r *http.Request) string {
 }
 
 func ClientIP(r *http.Request) string {
+	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		remoteHost = r.RemoteAddr
+	}
+
+	// Only honor X-Forwarded-For if request came from a trusted reverse proxy
+	if !isTrustedProxy(remoteHost) {
+		return remoteHost
+	}
+
 	forwarded := r.Header.Get("X-Forwarded-For")
 	if forwarded != "" {
 		parts := strings.Split(forwarded, ",")
-		return strings.TrimSpace(parts[0])
+		clientIP := strings.TrimSpace(parts[0])
+		if clientIP != "" && net.ParseIP(clientIP) != nil {
+			return clientIP
+		}
 	}
 
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+	return remoteHost
+}
+
+func isTrustedProxy(remoteHost string) bool {
+	ip := net.ParseIP(remoteHost)
+	if ip == nil {
+		return false
 	}
 
-	return host
+	if ip.IsLoopback() {
+		return true
+	}
+
+	trustedEnv := os.Getenv("TRUSTED_PROXIES")
+	if trustedEnv == "" {
+		return false
+	}
+
+	for _, entry := range strings.Split(trustedEnv, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+
+		if _, cidr, err := net.ParseCIDR(entry); err == nil {
+			if cidr.Contains(ip) {
+				return true
+			}
+		} else if directIP := net.ParseIP(entry); directIP != nil {
+			if directIP.Equal(ip) {
+				return true
+			}
+		}
+	}
+
+	return false
 }

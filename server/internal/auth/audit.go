@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/security"
 )
 
 type AuditLogEntry struct {
@@ -25,13 +25,7 @@ type AuditLogEntry struct {
 }
 
 func ClientIP(r *http.Request) string {
-	forwarded := r.Header.Get("X-Forwarded-For")
-	if forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		return strings.TrimSpace(parts[0])
-	}
-
-	return r.RemoteAddr
+	return security.ClientIP(r)
 }
 
 func WriteAudit(

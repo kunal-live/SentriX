@@ -130,7 +130,9 @@ func main() {
 	r.Use(api.RequestIDMiddleware)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(security.SecurityHeaders)
 	r.Use(security.CORSMiddleware)
+	r.Use(security.LimitBody(4 * 1024 * 1024)) // 4MB request body protection against DoS
 
 	r.Get("/health/live", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -178,7 +180,8 @@ func main() {
 			})
 
 			// Agent endpoints
-			r.Post("/agent/enroll", agents.HandleEnroll(pool))
+			enrollLimiter := security.NewRateLimiter(10, 20)
+			r.With(security.HTTPRateLimit(enrollLimiter, security.IPKey, "Too many enrollment requests; please try again later")).Post("/agent/enroll", agents.HandleEnroll(pool))
 
 			r.Group(func(r chi.Router) {
 				r.Use(metrics.AgentAuthMiddleware(pool))
@@ -413,8 +416,13 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: r,
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20, // 1MB header limit
 	}
 
 	go func() {

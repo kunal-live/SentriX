@@ -560,6 +560,20 @@ func StartSimulator(ctx context.Context, bus *realtime.Bus) {
 	}
 }
 
+type DemoSessionToken struct {
+	Token     string
+	UserID    string
+	Email     string
+	Role      string
+	ExpiresAt time.Time
+	Revoked   bool
+}
+
+var (
+	demoSessionMu     sync.RWMutex
+	demoRefreshTokens = make(map[string]*DemoSessionToken)
+)
+
 func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, ticketStore *realtime.TicketStore) {
 	initStore()
 
@@ -625,6 +639,18 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 			}
 
 			refreshToken := "demo-refresh-token-" + uuid.New().String()
+
+			demoSessionMu.Lock()
+			demoRefreshTokens[refreshToken] = &DemoSessionToken{
+				Token:     refreshToken,
+				UserID:    matchedUser.ID,
+				Email:     matchedUser.Email,
+				Role:      matchedUser.Role,
+				ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+				Revoked:   false,
+			}
+			demoSessionMu.Unlock()
+
 			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 			http.SetCookie(w, &http.Cookie{
 				Name:     "sentrix_refresh_token",
@@ -643,9 +669,8 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 					"email": matchedUser.Email,
 					"role":  matchedUser.Role,
 				},
-				"access_token":  token,
-				"refresh_token": refreshToken,
-				"expires_in":    int64(time.Until(expiresAt).Seconds()),
+				"access_token": token,
+				"expires_in":   int64(time.Until(expiresAt).Seconds()),
 			})
 		})
 
@@ -662,13 +687,35 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 				}
 			}
 
-			if refreshToken == "" || !strings.HasPrefix(refreshToken, "demo-refresh-token-") {
-				http.Error(w, "invalid or missing refresh token", http.StatusUnauthorized)
+			if refreshToken == "" {
+				http.Error(w, "missing refresh token", http.StatusUnauthorized)
 				return
 			}
 
-			token, expiresAt, _ := auth.GenerateAccessToken("usr-admin-demo", "admin@sentrix.local", "ADMIN")
+			demoSessionMu.Lock()
+			session, exists := demoRefreshTokens[refreshToken]
+			if !exists || session.Revoked || time.Now().After(session.ExpiresAt) {
+				demoSessionMu.Unlock()
+				http.Error(w, "invalid or expired refresh token", http.StatusUnauthorized)
+				return
+			}
+
+			// Invalidate old token (rotation)
+			session.Revoked = true
+
+			// Issue rotated refresh token
 			newRefreshToken := "demo-refresh-token-" + uuid.New().String()
+			demoRefreshTokens[newRefreshToken] = &DemoSessionToken{
+				Token:     newRefreshToken,
+				UserID:    session.UserID,
+				Email:     session.Email,
+				Role:      session.Role,
+				ExpiresAt: time.Now().Add(7 * 24 * time.Hour),
+				Revoked:   false,
+			}
+			demoSessionMu.Unlock()
+
+			token, expiresAt, _ := auth.GenerateAccessToken(session.UserID, session.Email, session.Role)
 			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 			http.SetCookie(w, &http.Cookie{
 				Name:     "sentrix_refresh_token",
@@ -682,13 +729,32 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
-				"access_token":  token,
-				"refresh_token": newRefreshToken,
-				"expires_in":    int64(time.Until(expiresAt).Seconds()),
+				"access_token": token,
+				"expires_in":   int64(time.Until(expiresAt).Seconds()),
 			})
 		})
 
 		r.Post("/logout", func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				RefreshToken string `json:"refresh_token"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+
+			refreshToken := body.RefreshToken
+			if refreshToken == "" {
+				if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil {
+					refreshToken = cookie.Value
+				}
+			}
+
+			if refreshToken != "" {
+				demoSessionMu.Lock()
+				if session, ok := demoRefreshTokens[refreshToken]; ok {
+					session.Revoked = true
+				}
+				demoSessionMu.Unlock()
+			}
+
 			isSecure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 			http.SetCookie(w, &http.Cookie{
 				Name:     "sentrix_refresh_token",

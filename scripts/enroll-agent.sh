@@ -16,9 +16,12 @@ HOSTNAME="$(hostname)"
 PLATFORM="linux"
 ARCH="$(uname -m)"
 
-PROTOCOL="http"
-if [[ "${SERVER_PORT}" == "443" || "${SENTRIX_USE_HTTPS:-false}" == "true" ]]; then
-  PROTOCOL="https"
+PROTOCOL="https"
+USE_TLS="true"
+if [[ "${SENTRIX_ALLOW_INSECURE_HTTP:-false}" == "true" || "${SENTRIX_INSECURE_HTTP:-false}" == "true" ]]; then
+  echo "WARNING: Insecure plaintext HTTP enrollment allowed by override." >&2
+  PROTOCOL="http"
+  USE_TLS="false"
 fi
 
 if [[ "${SERVER_HOST}" =~ ^https?:// ]]; then
@@ -63,6 +66,7 @@ install -d /etc/sentrix
 cat > /etc/sentrix/agent.env <<EOF
 SENTRIX_SERVER_HOST=${SERVER_HOST}
 SENTRIX_SERVER_PORT=${SERVER_PORT}
+SENTRIX_USE_TLS=${USE_TLS}
 SENTRIX_AGENT_ID=${AGENT_ID}
 SENTRIX_AGENT_CREDENTIAL=${CREDENTIAL}
 EOF

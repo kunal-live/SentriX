@@ -150,7 +150,7 @@ int main(int argc, char *argv[]) {
     strncpy(config.server_host, "127.0.0.1", sizeof(config.server_host) - 1);
     config.server_port = 8080;
     strncpy(config.agent_id, "00000000-0000-0000-0000-000000000001", sizeof(config.agent_id) - 1);
-    strncpy(config.auth_token, "agent_secret_credential", sizeof(config.auth_token) - 1);
+    config.auth_token[0] = '\0';
 
     const char *config_file = "/etc/sentrix/agent.env";
 
@@ -193,6 +193,11 @@ int main(int argc, char *argv[]) {
 #else
         _putenv("SENTRIX_USE_TLS=true");
 #endif
+    }
+
+    if (config.auth_token[0] == '\0') {
+        fprintf(stderr, "FATAL CONFIGURATION ERROR: No agent authentication credential found in %s or SENTRIX_AGENT_CREDENTIAL. Cannot start daemon without authentication credentials.\n", config_file);
+        return 1;
     }
 
     printf("Target Server: %s:%d (TLS: %s)\n", config.server_host, config.server_port, config.use_tls ? "ENABLED" : "DISABLED");

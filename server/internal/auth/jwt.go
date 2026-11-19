@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,32 +28,34 @@ var (
 
 func jwtSecret() []byte {
 	secretOnce.Do(func() {
-		secret := os.Getenv("JWT_SECRET")
+		secret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+		env := strings.ToLower(os.Getenv("SENTRIX_ENV"))
+		if env == "" {
+			env = strings.ToLower(os.Getenv("ENV"))
+		}
+		isProd := (env == "production" || env == "prod")
+
 		insecureDefaults := map[string]bool{
 			"":                                  true,
 			"change-me-to-a-long-random-string": true,
 			"sentrix-dev-insecure-secret":       true,
 			"secret":                            true,
+			"sentrix":                           true,
 		}
 
-		if insecureDefaults[secret] {
-			env := os.Getenv("SENTRIX_ENV")
-			if env == "" {
-				env = os.Getenv("ENV")
+		if insecureDefaults[secret] || len(secret) < 32 {
+			if isProd {
+				slog.Error("FATAL: Insecure, missing, or weak (<32 bytes) JWT_SECRET detected in production environment! Aborting startup.")
+				os.Exit(1)
 			}
 
-			if env == "production" || env == "prod" {
-				slog.Error("FATAL: Insecure or default JWT_SECRET detected in production environment! Generating ephemeral cryptographic key.")
-			} else {
-				slog.Warn("JWT_SECRET is unset or using default example; generating secure ephemeral key for session.")
-			}
-
+			slog.Warn("JWT_SECRET is unset, weak (<32 chars), or using default placeholder; generating secure 32-byte ephemeral key for session.")
 			randBytes := make([]byte, 32)
-			if _, err := rand.Read(randBytes); err == nil {
-				activeSecret = randBytes
-				return
+			if _, err := rand.Read(randBytes); err != nil {
+				slog.Error("FATAL: Failed to read from system CSPRNG", "error", err)
+				os.Exit(1)
 			}
-			activeSecret = []byte("sentrix-fallback-ephemeral-key-2026")
+			activeSecret = randBytes
 		} else {
 			activeSecret = []byte(secret)
 		}
