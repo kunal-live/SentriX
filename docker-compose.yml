@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg16
+    container_name: sentrix-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sentrix}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-secure-password}
+      POSTGRES_DB: ${POSTGRES_DB:-sentrix}
+    ports:
+      # Bind strictly to localhost loopback to prevent exposing database port to public network
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - sentrix_data:/var/lib/postgresql/data
+      - ./server/migrations:/docker-entrypoint-initdb.d # Auto-run migrations on first start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-sentrix} -d ${POSTGRES_DB:-sentrix}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sentrix-net
+
+  sentrix-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sentrix-server
+    restart: unless-stopped
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-sentrix}:${POSTGRES_PASSWORD:-change-me-secure-password}@timescaledb:5432/${POSTGRES_DB:-sentrix}?sslmode=disable
+      PORT: "8080"
+      SENTRIX_ENV: production
+      JWT_SECRET: ${JWT_SECRET:-}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8080}
+      SENTRIX_WEB_DIR: /app/web
+      SENTRIX_MIGRATIONS_DIR: /app/migrations
+    networks:
+      - sentrix-net
+
+volumes:
+  sentrix_data:
+
+networks:
+  sentrix-net:
+    driver: bridge

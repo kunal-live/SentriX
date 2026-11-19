@@ -430,7 +430,7 @@ export const AgentsPage: React.FC = () => {
               <div className="p-4 rounded-xl bg-black/60 border border-[#232730] font-mono text-xs text-blue-300 space-y-2 overflow-x-auto select-all whitespace-pre-wrap">
                 <code>
 {`# 1. Download & verify native agent binary
-curl -sSL https://github.com/kunal-gin/SentriX/releases/download/v1.0.0/sentrix-agent-1.0.0-linux-x86_64.tar.gz | tar -xz
+curl -sSL https://github.com/kunal-live/SentriX/releases/download/v1.0.0/sentrix-agent-1.0.0-linux-x86_64.tar.gz | tar -xz
 
 # 2. Install agent service
 sudo ./scripts/install-agent.sh ./bin/sentrix-agent

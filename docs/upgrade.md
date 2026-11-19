@@ -55,7 +55,7 @@ The native C agent can be upgraded on target Linux hosts without rebooting the h
 ```bash
 # 1. Download or build the new agent binary
 cd /tmp
-curl -sSL -O https://github.com/kunal-gin/SentriX/releases/download/v1.1.0/sentrix-agent-linux-amd64
+curl -sSL -O https://github.com/kunal-live/SentriX/releases/download/v1.1.0/sentrix-agent-linux-amd64
 chmod +x sentrix-agent-linux-amd64
 
 # 2. Atomically swap the binary

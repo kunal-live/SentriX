@@ -48,7 +48,7 @@ export function EnrollServerModal({ isOpen, onClose }: EnrollServerModalProps) {
   if (!isOpen) return null;
 
   const installCommand = tokenData
-    ? `curl -sSL https://github.com/kunal-gin/SentriX/releases/download/v1.0.0/sentrix-agent-1.0.0-linux-x86_64.tar.gz | tar -xz && \\
+    ? `curl -sSL https://github.com/kunal-live/SentriX/releases/download/v1.0.0/sentrix-agent-1.0.0-linux-x86_64.tar.gz | tar -xz && \\
 sudo ./scripts/install-agent.sh ./bin/sentrix-agent && \\
 sudo ./scripts/enroll-agent.sh ${serverHost} ${serverPort} ${tokenData.token} 1.0.0 && \\
 sudo systemctl enable --now sentrix-agent`
