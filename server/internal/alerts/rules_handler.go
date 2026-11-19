@@ -217,6 +217,10 @@ func HandleCreateRule(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleUpdateRule(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ruleID := chi.URLParam(r, "ruleID")
+		if _, err := uuid.Parse(ruleID); err != nil {
+			http.Error(w, "invalid rule ID format", http.StatusBadRequest)
+			return
+		}
 
 		var req UpdateAlertRuleRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -329,6 +333,10 @@ func HandleUpdateRule(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleDeleteRule(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ruleID := chi.URLParam(r, "ruleID")
+		if _, err := uuid.Parse(ruleID); err != nil {
+			http.Error(w, "invalid rule ID format", http.StatusBadRequest)
+			return
+		}
 
 		_, err := pool.Exec(r.Context(), `
 			DELETE FROM alert_rules

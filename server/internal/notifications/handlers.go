@@ -80,8 +80,8 @@ func ValidateSafeWebhookURL(rawURL string) (*url.URL, error) {
 	return parsedURL, nil
 }
 
-// maskWebhookURL masks sensitive paths, keys, and tokens in webhook URLs for API responses
-func maskWebhookURL(rawURL string) string {
+// MaskWebhookURL masks sensitive paths, keys, and tokens in webhook URLs for API responses
+func MaskWebhookURL(rawURL string) string {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Host == "" {
 		return "https://***"
@@ -162,7 +162,7 @@ func HandleListChannels(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 
 			// Mask webhook URL to prevent secret/token exposure in list API
-			channel.URL = maskWebhookURL(channel.URL)
+			channel.URL = MaskWebhookURL(channel.URL)
 
 			channels = append(channels, channel)
 		}
@@ -267,6 +267,10 @@ func HandleCreateChannel(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleDeleteChannel(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		channelID := chi.URLParam(r, "channelID")
+		if _, err := uuid.Parse(channelID); err != nil {
+			http.Error(w, "invalid channel ID format", http.StatusBadRequest)
+			return
+		}
 
 		_, err := pool.Exec(r.Context(), `
 			DELETE FROM notification_channels
@@ -366,19 +370,36 @@ func HandleListJobs(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-// POST /api/v1/notifications/channels/{channelID}/test
+// POST /api/v1/notifications/channels/{channelID}/test and /notifications/channels/test
 func HandleTestChannel(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		channelID := chi.URLParam(r, "channelID")
 		var rawURL string
-		err := pool.QueryRow(r.Context(), `
-			SELECT COALESCE(config->>'url', '')
-			FROM notification_channels
-			WHERE id = $1
-		`, channelID).Scan(&rawURL)
-		if err != nil {
-			http.Error(w, "channel not found", http.StatusNotFound)
-			return
+
+		if channelID != "" {
+			if _, err := uuid.Parse(channelID); err != nil {
+				http.Error(w, "invalid channel ID format", http.StatusBadRequest)
+				return
+			}
+			err := pool.QueryRow(r.Context(), `
+				SELECT COALESCE(config->>'url', '')
+				FROM notification_channels
+				WHERE id = $1
+			`, channelID).Scan(&rawURL)
+			if err != nil {
+				http.Error(w, "channel not found", http.StatusNotFound)
+				return
+			}
+		} else {
+			var body struct {
+				URL string `json:"url"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			rawURL = body.URL
+			if rawURL == "" {
+				http.Error(w, "channel ID or webhook URL required", http.StatusBadRequest)
+				return
+			}
 		}
 
 		if _, err := ValidateSafeWebhookURL(rawURL); err != nil {

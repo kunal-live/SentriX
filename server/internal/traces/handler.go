@@ -306,6 +306,11 @@ func HandleIngestTraces(pool *pgxpool.Pool) http.HandlerFunc {
 			req.SpanCount = len(req.Spans)
 		}
 
+		if len(req.Spans) > 2000 {
+			api.RespondError(w, r, http.StatusBadRequest, "TOO_MANY_SPANS", "Maximum 2000 spans allowed per trace")
+			return
+		}
+
 		traceStoreMu.Lock()
 		traceBuffer = append([]TraceDetail{req}, traceBuffer...)
 		if len(traceBuffer) > 500 {

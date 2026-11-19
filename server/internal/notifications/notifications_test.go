@@ -28,7 +28,7 @@ func TestSSRFPrevention(t *testing.T) {
 
 func TestMaskWebhookURL(t *testing.T) {
 	raw := "https://example.com/api/v1/webhook/receiver/channel0001/token987654321?secret=supersecret123"
-	masked := maskWebhookURL(raw)
+	masked := MaskWebhookURL(raw)
 
 	if masked == raw {
 		t.Errorf("Expected URL to be masked, got original %s", masked)

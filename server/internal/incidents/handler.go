@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -142,6 +143,10 @@ func HandleListIncidents(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleGetIncident(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		incidentID := chi.URLParam(r, "incidentID")
+		if _, err := uuid.Parse(incidentID); err != nil {
+			http.Error(w, "invalid incident ID format", http.StatusBadRequest)
+			return
+		}
 
 		var detail IncidentDetail
 
@@ -281,6 +286,10 @@ func HandleGetIncident(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleAcknowledge(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		incidentID := chi.URLParam(r, "incidentID")
+		if _, err := uuid.Parse(incidentID); err != nil {
+			http.Error(w, "invalid incident ID format", http.StatusBadRequest)
+			return
+		}
 
 		actor := auth.GetUser(r)
 		if actor == nil {
@@ -394,6 +403,10 @@ func HandleAcknowledge(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleResolve(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		incidentID := chi.URLParam(r, "incidentID")
+		if _, err := uuid.Parse(incidentID); err != nil {
+			http.Error(w, "invalid incident ID format", http.StatusBadRequest)
+			return
+		}
 
 		actor := auth.GetUser(r)
 		if actor == nil {
@@ -507,6 +520,10 @@ func HandleResolve(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleAddComment(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		incidentID := chi.URLParam(r, "incidentID")
+		if _, err := uuid.Parse(incidentID); err != nil {
+			http.Error(w, "invalid incident ID format", http.StatusBadRequest)
+			return
+		}
 
 		actor := auth.GetUser(r)
 		if actor == nil {

@@ -325,23 +325,14 @@ func HandleLogout(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 		}
 
-		if req.RefreshToken == "" {
-			http.Error(w, "refresh_token is required", http.StatusBadRequest)
-			return
-		}
-
-		tokenHash := hashRefreshToken(req.RefreshToken)
-
-		_, err := pool.Exec(r.Context(), `
-			UPDATE refresh_tokens
-			SET revoked_at = NOW()
-			WHERE token_hash = $1
-			  AND revoked_at IS NULL
-		`, tokenHash)
-
-		if err != nil {
-			http.Error(w, "database error", http.StatusInternalServerError)
-			return
+		if req.RefreshToken != "" {
+			tokenHash := hashRefreshToken(req.RefreshToken)
+			_, _ = pool.Exec(r.Context(), `
+				UPDATE refresh_tokens
+				SET revoked_at = NOW()
+				WHERE token_hash = $1
+				  AND revoked_at IS NULL
+			`, tokenHash)
 		}
 
 		setRefreshTokenCookie(w, r, "", -1)

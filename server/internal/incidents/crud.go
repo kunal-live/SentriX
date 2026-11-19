@@ -61,6 +61,10 @@ func HandleCreateIncident(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		ctx := r.Context()
+		if _, err := uuid.Parse(req.ServerID); err != nil {
+			api.RespondError(w, r, http.StatusBadRequest, "INVALID_SERVER_ID", "Target server_id format is invalid")
+			return
+		}
 		incidentID := uuid.New()
 
 		// Verify server exists
@@ -129,6 +133,10 @@ func HandleCreateIncident(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleUpdateIncident(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		incidentID := chi.URLParam(r, "incidentID")
+		if _, err := uuid.Parse(incidentID); err != nil {
+			api.RespondError(w, r, http.StatusBadRequest, "INVALID_INCIDENT_ID", "Incident ID format is invalid")
+			return
+		}
 		actor := auth.GetUser(r)
 		if actor == nil {
 			api.RespondError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
@@ -190,6 +198,10 @@ func HandleUpdateIncident(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleInvestigate(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		incidentID := chi.URLParam(r, "incidentID")
+		if _, err := uuid.Parse(incidentID); err != nil {
+			api.RespondError(w, r, http.StatusBadRequest, "INVALID_INCIDENT_ID", "Incident ID format is invalid")
+			return
+		}
 		actor := auth.GetUser(r)
 		if actor == nil {
 			api.RespondError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")
@@ -246,6 +258,10 @@ func HandleInvestigate(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleSavePostmortem(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		incidentID := chi.URLParam(r, "incidentID")
+		if _, err := uuid.Parse(incidentID); err != nil {
+			api.RespondError(w, r, http.StatusBadRequest, "INVALID_INCIDENT_ID", "Incident ID format is invalid")
+			return
+		}
 		actor := auth.GetUser(r)
 		if actor == nil {
 			api.RespondError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "Authentication required")

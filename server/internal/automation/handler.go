@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/auth"
 )
 
 type RunbookStep struct {
@@ -208,11 +209,17 @@ func HandleExecuteRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 		}
 
+		actor := auth.GetUser(r)
+		triggeredBy := "admin@sentrix.local"
+		if actor != nil {
+			triggeredBy = actor.Email
+		}
+
 		exec := &RunbookExecution{
 			ID:           "exec-" + uuid.New().String()[:8],
 			RunbookID:    matched.ID,
 			RunbookTitle: matched.Title,
-			TriggeredBy:  "admin@sentrix.local",
+			TriggeredBy:  triggeredBy,
 			Status:       status,
 			StartedAt:    now,
 			CompletedAt:  completedAt,
@@ -232,6 +239,12 @@ func HandleExecuteRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 // POST /api/v1/automation/executions/{execID}/approve
 func HandleApproveExecution(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		actor := auth.GetUser(r)
+		if actor == nil || (actor.Role != "ADMIN" && actor.Role != "OPERATOR") {
+			http.Error(w, "forbidden: only administrators or operators can approve runbook executions", http.StatusForbidden)
+			return
+		}
+
 		execID := chi.URLParam(r, "execID")
 
 		automationMu.Lock()
@@ -244,7 +257,7 @@ func HandleApproveExecution(pool *pgxpool.Pool) http.HandlerFunc {
 					ex.Status = "COMPLETED"
 					ex.CompletedAt = &now
 					ex.StepResults = append(ex.StepResults,
-						"[Approval] Operator authorization granted. Proceeding with execution.",
+						"[Approval] Operator authorization granted by "+actor.Email+". Proceeding with execution.",
 						"[Execution] Executed safe parameterized action steps with zero errors.",
 						"[Verification] Post-execution verification probe succeeded. Operational state normal.",
 					)

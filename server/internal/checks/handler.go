@@ -76,6 +76,10 @@ func HandleListChecks(pool *pgxpool.Pool) http.HandlerFunc {
 
 		var serverIDParam interface{}
 		if serverID != "" {
+			if _, err := uuid.Parse(serverID); err != nil {
+				http.Error(w, "invalid server ID format", http.StatusBadRequest)
+				return
+			}
 			serverIDParam = serverID
 		}
 
@@ -163,6 +167,11 @@ func HandleCreateCheck(pool *pgxpool.Pool) http.HandlerFunc {
 
 		if req.ServerID == "" {
 			http.Error(w, "server_id is required", http.StatusBadRequest)
+			return
+		}
+
+		if _, err := uuid.Parse(req.ServerID); err != nil {
+			http.Error(w, "invalid server_id UUID format", http.StatusBadRequest)
 			return
 		}
 
@@ -298,6 +307,10 @@ func HandleCreateCheck(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleUpdateCheck(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		checkID := chi.URLParam(r, "checkID")
+		if _, err := uuid.Parse(checkID); err != nil {
+			http.Error(w, "invalid check ID format", http.StatusBadRequest)
+			return
+		}
 
 		var req UpdateCheckRequest
 
@@ -422,6 +435,10 @@ func HandleUpdateCheck(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleDeleteCheck(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		checkID := chi.URLParam(r, "checkID")
+		if _, err := uuid.Parse(checkID); err != nil {
+			http.Error(w, "invalid check ID format", http.StatusBadRequest)
+			return
+		}
 
 		_, err := pool.Exec(r.Context(), `
 			DELETE FROM checks

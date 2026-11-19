@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 int buffer_init(DiskBuffer *buf, const char *path, size_t max_bytes) {
     if (!buf) return -1;
@@ -36,6 +37,9 @@ int buffer_push(DiskBuffer *buf, const char *payload, size_t length) {
 
     FILE *fp = fopen(buf->file_path, "ab");
     if (!fp) return -1;
+#ifndef _WIN32
+    chmod(buf->file_path, 0600);
+#endif
 
     uint32_t len32 = (uint32_t)length;
     fwrite(&len32, sizeof(uint32_t), 1, fp);
@@ -94,6 +98,9 @@ int buffer_pop(DiskBuffer *buf) {
         fclose(fp);
         return -1;
     }
+#ifndef _WIN32
+    chmod(temp_path, 0600);
+#endif
 
     fseek(fp, len32, SEEK_CUR);
 

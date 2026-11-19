@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -169,8 +170,8 @@ func HandleCreateSilence(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleDeleteSilence(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		silenceID := chi.URLParam(r, "silenceID")
-		if silenceID == "" {
-			http.Error(w, "missing silence ID", http.StatusBadRequest)
+		if _, err := uuid.Parse(silenceID); err != nil {
+			http.Error(w, "invalid silence ID format", http.StatusBadRequest)
 			return
 		}
 

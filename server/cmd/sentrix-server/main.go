@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -401,8 +402,14 @@ func main() {
 		slog.Info("Serving web dashboard frontend", "directory", webDir)
 		fileServer := http.FileServer(http.Dir(webDir))
 		r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-			path := filepath.Join(webDir, r.URL.Path)
-			if info, err := os.Stat(path); os.IsNotExist(err) || info.IsDir() {
+			cleanPath := filepath.Clean(r.URL.Path)
+			targetPath := filepath.Join(webDir, cleanPath)
+			rel, err := filepath.Rel(webDir, targetPath)
+			if err != nil || strings.HasPrefix(rel, "..") {
+				http.ServeFile(w, r, filepath.Join(webDir, "index.html"))
+				return
+			}
+			if info, err := os.Stat(targetPath); os.IsNotExist(err) || info.IsDir() {
 				http.ServeFile(w, r, filepath.Join(webDir, "index.html"))
 				return
 			}

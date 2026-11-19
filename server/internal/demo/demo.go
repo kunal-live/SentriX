@@ -31,6 +31,7 @@ import (
 	"github.com/sentrix/server/internal/intelligence"
 	"github.com/sentrix/server/internal/logs"
 	"github.com/sentrix/server/internal/network"
+	"github.com/sentrix/server/internal/notifications"
 	"github.com/sentrix/server/internal/organizations"
 	"github.com/sentrix/server/internal/realtime"
 	"github.com/sentrix/server/internal/scale"
@@ -768,16 +769,11 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 			w.WriteHeader(http.StatusNoContent)
 		})
 
-		r.Post("/ws-ticket", realtime.HandleIssueTicket(ticketStore))
-
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireAuth)
 			r.Get("/me", auth.HandleMe())
 		})
 	})
-
-	r.Post("/realtime/ticket", realtime.HandleIssueTicket(ticketStore))
-	r.Post("/auth/ws-ticket", realtime.HandleIssueTicket(ticketStore))
 
 	// Agent Endpoints
 	r.Post("/agent/enroll", func(w http.ResponseWriter, r *http.Request) {
@@ -1470,7 +1466,27 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 
 			list := make([]*DemoChannel, 0, len(store.channels))
 			for _, c := range store.channels {
-				list = append(list, c)
+				// Create masked copy so credentials/tokens in webhook URL are not exposed in GET responses
+				maskedConfig := make(map[string]any)
+				if cfgMap, ok := c.Config.(map[string]any); ok {
+					for k, v := range cfgMap {
+						if k == "url" {
+							if strURL, ok := v.(string); ok {
+								maskedConfig[k] = notifications.MaskWebhookURL(strURL)
+								continue
+							}
+						}
+						maskedConfig[k] = v
+					}
+				}
+				list = append(list, &DemoChannel{
+					ID:        c.ID,
+					Name:      c.Name,
+					Type:      c.Type,
+					Config:    maskedConfig,
+					Enabled:   c.Enabled,
+					CreatedAt: c.CreatedAt,
+				})
 			}
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(list)
@@ -1485,6 +1501,20 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				http.Error(w, "invalid JSON", http.StatusBadRequest)
 				return
+			}
+
+			if body.Name == "" {
+				http.Error(w, "name is required", http.StatusBadRequest)
+				return
+			}
+
+			if body.Config != nil {
+				if rawURL, ok := body.Config["url"].(string); ok && rawURL != "" {
+					if _, err := notifications.ValidateSafeWebhookURL(rawURL); err != nil {
+						http.Error(w, err.Error(), http.StatusBadRequest)
+						return
+					}
+				}
 			}
 
 			channel := &DemoChannel{
@@ -1511,6 +1541,58 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 			delete(store.channels, id)
 			store.mu.Unlock()
 			w.WriteHeader(http.StatusNoContent)
+		})
+
+		r.Post("/notifications/channels/{channelID}/test", func(w http.ResponseWriter, r *http.Request) {
+			channelID := chi.URLParam(r, "channelID")
+			store.mu.RLock()
+			ch, ok := store.channels[channelID]
+			store.mu.RUnlock()
+			if !ok {
+				http.Error(w, "channel not found", http.StatusNotFound)
+				return
+			}
+			rawURL := ""
+			if ch.Config != nil {
+				if cfgMap, ok := ch.Config.(map[string]any); ok {
+					if u, ok := cfgMap["url"].(string); ok {
+						rawURL = u
+					}
+				}
+			}
+			if rawURL == "" {
+				http.Error(w, "channel has no webhook URL configured", http.StatusBadRequest)
+				return
+			}
+			if _, err := notifications.ValidateSafeWebhookURL(rawURL); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":      "delivered",
+				"http_status": 200,
+			})
+		})
+
+		r.Post("/notifications/channels/test", func(w http.ResponseWriter, r *http.Request) {
+			var body struct {
+				URL string `json:"url"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.URL == "" {
+				http.Error(w, "url is required", http.StatusBadRequest)
+				return
+			}
+			if _, err := notifications.ValidateSafeWebhookURL(body.URL); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":      "delivered",
+				"http_status": 200,
+			})
 		})
 
 		r.Get("/notifications/jobs", func(w http.ResponseWriter, r *http.Request) {
@@ -1546,7 +1628,11 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		})
 
 		r.Post("/realtime/ticket", func(w http.ResponseWriter, r *http.Request) {
-			ticket := ticketStore.Issue("demo-admin-id")
+			userID := "demo-admin-id"
+			if actor := auth.GetUser(r); actor != nil {
+				userID = actor.ID
+			}
+			ticket := ticketStore.Issue(userID)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"ticket":     ticket,
@@ -1555,7 +1641,11 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		})
 
 		r.Post("/auth/ws-ticket", func(w http.ResponseWriter, r *http.Request) {
-			ticket := ticketStore.Issue("demo-admin-id")
+			userID := "demo-admin-id"
+			if actor := auth.GetUser(r); actor != nil {
+				userID = actor.ID
+			}
+			ticket := ticketStore.Issue(userID)
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{
 				"ticket":     ticket,

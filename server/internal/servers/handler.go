@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sentrix/server/internal/auth"
 )
@@ -80,8 +81,8 @@ func HandleDeleteServer(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		serverID := chi.URLParam(r, "serverID")
-		if serverID == "" {
-			http.Error(w, "server ID required", http.StatusBadRequest)
+		if _, err := uuid.Parse(serverID); err != nil {
+			http.Error(w, "invalid server ID format", http.StatusBadRequest)
 			return
 		}
 
@@ -92,6 +93,10 @@ func HandleDeleteServer(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 		defer tx.Rollback(ctx)
+
+		// Retrieve associated agent ID to revoke credential upon server deletion
+		var agentID *string
+		_ = tx.QueryRow(ctx, "SELECT agent_id FROM servers WHERE id = $1", serverID).Scan(&agentID)
 
 		// Clean up dependent records
 		_, _ = tx.Exec(ctx, "DELETE FROM checks WHERE server_id = $1", serverID)
@@ -112,10 +117,26 @@ func HandleDeleteServer(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		// Revoke the agent so it can no longer submit telemetry
+		if agentID != nil {
+			_, _ = tx.Exec(ctx, "UPDATE agents SET status = 'REVOKED' WHERE id = $1", *agentID)
+		}
+
 		if err := tx.Commit(ctx); err != nil {
 			http.Error(w, "transaction commit failed", http.StatusInternalServerError)
 			return
 		}
+
+		auth.WriteAudit(
+			ctx,
+			pool,
+			&actor.ID,
+			"server.delete",
+			"server",
+			serverID,
+			auth.ClientIP(r),
+			nil,
+		)
 
 		w.WriteHeader(http.StatusNoContent)
 	}

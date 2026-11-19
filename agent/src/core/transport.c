@@ -142,6 +142,32 @@ int send_telemetry(const char *host, int port, const char *path, const char *jso
     return (status >= 200 && status < 300) ? 0 : -1;
 }
 
+static int write_all_data(
+#ifdef SENTRIX_ENABLE_TLS
+    int use_tls, SSL *ssl,
+#endif
+    int sock, const char *data, size_t len
+) {
+    size_t written = 0;
+    while (written < len) {
+        int w = 0;
+#ifdef SENTRIX_ENABLE_TLS
+        if (use_tls && ssl) {
+            w = SSL_write(ssl, data + written, (int)(len - written));
+        } else {
+            w = (int)send(sock, data + written, len - written, 0);
+        }
+#else
+        w = (int)send(sock, data + written, len - written, 0);
+#endif
+        if (w <= 0) {
+            return 0;
+        }
+        written += (size_t)w;
+    }
+    return 1;
+}
+
 int http_request(
     const char *method,
     const char *host,
@@ -298,66 +324,48 @@ int http_request(
     }
 #endif
 
-    char request[8192];
+    char headers[2048];
     int body_len = body ? (int)strlen(body) : 0;
 
     if (auth_token && auth_token[0] != '\0') {
         snprintf(
-            request,
-            sizeof(request),
+            headers,
+            sizeof(headers),
             "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
             "Authorization: Bearer %s\r\n"
             "Content-Type: application/json\r\n"
             "Content-Length: %d\r\n"
-            "Connection: close\r\n\r\n"
-            "%s",
+            "Connection: close\r\n\r\n",
             method,
             path,
             host,
             auth_token,
-            body_len,
-            body ? body : ""
+            body_len
         );
     } else {
         snprintf(
-            request,
-            sizeof(request),
+            headers,
+            sizeof(headers),
             "%s %s HTTP/1.1\r\n"
             "Host: %s\r\n"
             "Content-Type: application/json\r\n"
             "Content-Length: %d\r\n"
-            "Connection: close\r\n\r\n"
-            "%s",
+            "Connection: close\r\n\r\n",
             method,
             path,
             host,
-            body_len,
-            body ? body : ""
+            body_len
         );
     }
 
-    // Write full request handling partial writes
-    size_t req_len = strlen(request);
-    size_t written = 0;
-    while (written < req_len) {
-        int w = 0;
+    // Write HTTP headers
+    if (!write_all_data(
 #ifdef SENTRIX_ENABLE_TLS
-        if (use_tls && ssl) {
-            w = SSL_write(ssl, request + written, (int)(req_len - written));
-        } else {
-            w = (int)send(sock, request + written, req_len - written, 0);
-        }
-#else
-        w = (int)send(sock, request + written, req_len - written, 0);
+        use_tls, ssl,
 #endif
-        if (w <= 0) {
-            break;
-        }
-        written += (size_t)w;
-    }
-
-    if (written < req_len) {
+        sock, headers, strlen(headers)
+    )) {
 #ifdef SENTRIX_ENABLE_TLS
         if (use_tls && ssl) {
             SSL_shutdown(ssl);
@@ -366,6 +374,25 @@ int http_request(
 #endif
         close(sock);
         return 0;
+    }
+
+    // Write HTTP body without fixed-buffer truncation
+    if (body && body_len > 0) {
+        if (!write_all_data(
+#ifdef SENTRIX_ENABLE_TLS
+            use_tls, ssl,
+#endif
+            sock, body, (size_t)body_len
+        )) {
+#ifdef SENTRIX_ENABLE_TLS
+            if (use_tls && ssl) {
+                SSL_shutdown(ssl);
+                SSL_free(ssl);
+            }
+#endif
+            close(sock);
+            return 0;
+        }
     }
 
     char buffer[8192];

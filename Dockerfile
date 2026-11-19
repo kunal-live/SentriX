@@ -8,7 +8,7 @@ RUN npm ci
 COPY web/ .
 RUN npm run build
 
-FROM golang:1.27-alpine AS server
+FROM golang:1.26-alpine AS server
 
 ARG VERSION=dev
 ARG COMMIT=none

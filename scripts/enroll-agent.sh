@@ -61,15 +61,18 @@ if [[ -z "$AGENT_ID" || -z "$CREDENTIAL" ]]; then
   exit 1
 fi
 
-install -d /etc/sentrix
+install -d -m 0755 /etc/sentrix
 
-cat > /etc/sentrix/agent.env <<EOF
+(
+  umask 077
+  cat > /etc/sentrix/agent.env <<EOF
 SENTRIX_SERVER_HOST=${SERVER_HOST}
 SENTRIX_SERVER_PORT=${SERVER_PORT}
 SENTRIX_USE_TLS=${USE_TLS}
 SENTRIX_AGENT_ID=${AGENT_ID}
 SENTRIX_AGENT_CREDENTIAL=${CREDENTIAL}
 EOF
+)
 
 chmod 0600 /etc/sentrix/agent.env
 

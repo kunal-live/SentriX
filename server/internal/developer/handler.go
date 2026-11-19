@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/auth"
 )
 
 type APIKey struct {
@@ -91,6 +92,14 @@ func HandleCreateAPIKey(pool *pgxpool.Pool) http.HandlerFunc {
 
 		if len(req.Scopes) == 0 {
 			req.Scopes = []string{"read"}
+		}
+
+		actor := auth.GetUser(r)
+		for _, s := range req.Scopes {
+			if s == "admin" && (actor == nil || actor.Role != "ADMIN") {
+				http.Error(w, "forbidden: only administrators can create admin-scoped API keys", http.StatusForbidden)
+				return
+			}
 		}
 
 		rawKey, _ := generateRandomKey("sk_live")

@@ -47,6 +47,16 @@ func HandleBatchTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		if agentID, ok := r.Context().Value("agent_id").(string); ok && agentID != "" {
+			var authorizedServerID string
+			err := pool.QueryRow(r.Context(), `SELECT id FROM servers WHERE agent_id = $1`, agentID).Scan(&authorizedServerID)
+			if err != nil || authorizedServerID != payload.ServerID {
+				selfmetrics.Global().IngestFailures.Add(1)
+				api.RespondError(w, r, http.StatusForbidden, "FORBIDDEN", "Agent is not authorized to submit telemetry for the specified server_id")
+				return
+			}
+		}
+
 		if len(payload.Samples) == 0 {
 			selfmetrics.Global().IngestFailures.Add(1)
 			api.RespondError(w, r, http.StatusBadRequest, "EMPTY_SAMPLES", "samples array must contain at least one sample")

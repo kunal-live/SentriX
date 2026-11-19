@@ -172,9 +172,14 @@ func HandleBatchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		if len(req.Logs) > 1000 {
+			api.RespondError(w, r, http.StatusBadRequest, "BATCH_TOO_LARGE", "Maximum 1000 log records allowed per batch")
+			return
+		}
+
 		now := time.Now().UTC()
-		logStoreMu.Lock()
-		for _, entry := range req.Logs {
+		processed := make([]StructuredLogEntry, len(req.Logs))
+		for i, entry := range req.Logs {
 			if entry.ID == "" {
 				entry.ID = "log-" + uuid.New().String()[:8]
 			}
@@ -184,9 +189,11 @@ func HandleBatchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 			if entry.ServerID == "" {
 				entry.ServerID = req.ServerID
 			}
-			logBuffer = append([]StructuredLogEntry{entry}, logBuffer...)
+			processed[i] = entry
 		}
-		// Cap memory buffer to last 2000 log items
+
+		logStoreMu.Lock()
+		logBuffer = append(processed, logBuffer...)
 		if len(logBuffer) > 2000 {
 			logBuffer = logBuffer[:2000]
 		}
