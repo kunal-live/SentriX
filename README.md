@@ -6,24 +6,29 @@
 [![Agent](https://img.shields.io/badge/Agent-C11%20Native-blue?logo=c)](./agent)
 [![Database](https://img.shields.io/badge/TimescaleDB-PostgreSQL%2016-336791?logo=postgresql)](https://www.timescale.com/)
 [![Frontend](https://img.shields.io/badge/UI-React%20%2B%20Vite%20%2B%20Tailwind-61DAFB?logo=react)](./web)
+[![Pricing](https://img.shields.io/badge/Plans-100%25%20Free%20%26%20Open-success)](LICENSE)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 
-SentriX is a modern, lightweight, high-performance infrastructure monitoring and observability platform engineered for sub-millisecond metric collection, OpenTelemetry distributed tracing, central log aggregation, Kubernetes fleet tracking, AI-assisted root cause analysis (RCA), and automated operational runbooks across distributed Linux environments.
+SentriX is a modern, lightweight, high-performance infrastructure monitoring and observability platform engineered for sub-millisecond metric collection, real-time WebSocket telemetry streaming, centralized structured log search, synthetic health probes, automated incident triaging, and security auditing across distributed Linux server fleets.
+
+**100% Free & Open Source**: No tiers, no billing gates, no metering, and no locked features.
 
 ---
 
 ## ⚡ Key Highlights
 
-- **Ultra-Lightweight C Agent**: Native C11 daemon with sub-10ms collection latency, negligible CPU footprint (<0.5%), and minimal memory consumption (<15MB RSS) reading directly from Linux `/proc`.
-- **High-Throughput Go Ingestion Core**: Non-blocking concurrent metric ingestion engine built in Go with streaming buffers, rate-limiting, and sequence-based replay protection.
-- **OpenTelemetry Distributed Tracing**: Native OTLP HTTP ingestion (`/otlp/v1/traces`), microsecond-precision span waterfall timelines, service dependency maps, and latency percentiles.
-- **Centralized Log Aggregation**: Multi-tenant log search, severity level filtering (`DEBUG`, `INFO`, `WARN`, `ERROR`), and seamless correlation with trace IDs and server IDs.
-- **Kubernetes Fleet Observability**: Multi-node health, cluster CPU/Memory pressure, Pod phase tracking (`Running`, `Pending`, `Failed`, `CrashLoopBackOff`), and deployment replica status.
-- **AI-Powered Root Cause Analysis (RCA)**: Correlates metric spikes, anomaly signals, error log patterns, and failing trace spans to generate instant postmortems and remediation advice.
-- **Operational Runbooks & Safe Automation**: Pre-flight checks, automated remediation procedures (connection pool drains, cache flushes, agent diagnostics), and execution audit logs.
+- **Ultra-Lightweight C Agent (`sentrix-agent`)**: Native C11 daemon with sub-10ms collection latency, negligible CPU footprint (<0.5%), and minimal memory consumption (<15MB RSS) reading directly from Linux `/proc`.
+- **Hardened Agent TLS Transport**: Mandatory HTTPS/TLS hostname verification (`SSL_set1_host` / `X509_check_host`), strict certificate validation, partial write protection, and fail-safe credential handling.
+- **High-Throughput Go Ingestion Core**: Non-blocking concurrent metric ingestion engine built in Go with streaming buffers, request body size limiting, IP rate limiting, and trusted-proxy validation.
 - **TimescaleDB & PostgreSQL 16**: High-velocity time-series storage with continuous aggregates, automated rollups, and 30-day retention policies.
-- **Obsidian Glassmorphic UI**: Sleek dark-mode interface built with React 18, Tailwind CSS, Recharts, and TanStack Query.
-- **Zero-Dependency Demo Mode**: Standalone in-memory fleet simulation for instant evaluation without requiring a live database.
+- **Real-Time Fleet Overview**: Live node health matrix, CPU/RAM/Disk saturation gauges, instantaneous filtering, and single-use 24-hour cryptographically hashed agent enrollment.
+- **Custom Observability Workspaces**: Dynamic dashboards with live time-series charts, customizable metric gauges, real error/warning log streams, and active incident triages.
+- **Cross-Node Metrics Explorer**: Multi-server time-series analytics powered by TimescaleDB queries (`/api/v1/metrics/query`) across CPU, memory, and disk utilization.
+- **Centralized Structured Logs**: High-velocity log aggregation with multi-field search, severity level filtering (`DEBUG`, `INFO`, `WARN`, `ERROR`), and real-time live tailing.
+- **Reliability, Incidents & Alert Rules**: Metric threshold evaluation engine with hysteresis/cooling, incident lifecycles (`OPEN`, `ACKNOWLEDGED`, `RESOLVED`), silence windows, and multi-channel notifications (Slack, Discord, PagerDuty, Webhooks).
+- **Synthetic Health Probes**: Automated HTTP and TCP uptime checks with response latency and availability tracking.
+- **Developer Platform & RBAC**: Scoped ingestion tokens, programmatic developer API keys, role-based access control (`ADMIN`, `OPERATOR`, `VIEWER`), and immutable security audit logs.
+- **Enterprise Security Hardened**: HttpOnly + SameSite cookies, session revocation on password changes, brute-force mitigation, and zero plaintext credential exposure.
 
 ---
 
@@ -38,10 +43,9 @@ SentriX is a modern, lightweight, high-performance infrastructure monitoring and
                                 |  |  - RAM / Swap         |  |
                                 |  |  - Multi-NIC Traffic  |  |
                                 |  |  - Disk / I/O IOPS    |  |
-                                |  |  - Synthetic Probes   |  |
                                 |  +-----------+-----------+  |
                                 +--------------|--------------+
-                                               | HTTP POST (JSON / Telemetry)
+                                               | HTTPS POST (TLS Hostname Verified)
                                                v
 +-------------------------------------------------------------------------------------------------+
 |                                    SentriX Server (Go)                                          |
@@ -49,18 +53,19 @@ SentriX is a modern, lightweight, high-performance infrastructure monitoring and
 |   +-----------------------+     +-----------------------+     +-----------------------------+   |
 |   |  Ingestion & Security | --> |   Alerting Engine     | --> |  Notification Hub           |   |
 |   |  - Token & JWT Guard  |     |   - Threshold Rules   |     |  - Slack Webhook            |   |
-|   |  - Sequence Replay    |     |   - Incident Engine   |     |  - Discord Webhook          |   |
-|   |  - Rate Limiter       |     |   - Hysteresis/Cool   |     |  - PagerDuty API            |   |
+|   |  - Body Size Limiter  |     |   - Incident Engine   |     |  - Discord Webhook          |   |
+|   |  - Trusted Proxy IP   |     |   - Silence Windows   |     |  - PagerDuty API            |   |
+|   |  - Rate Limiter       |     |   - Hysteresis/Cool   |     |  - Custom Webhooks          |   |
 |   +-----------+-----------+     +-----------------------+     +-----------------------------+   |
 |               |                                                                                 |
 |               +-----------------------------+-----------------------------+                     |
 |               |                             |                             |                     |
 |               v                             v                             v                     |
 |   +-----------------------+     +-----------------------+     +-----------------------------+   |
-|   | Observability Engines |     | Intelligence & Ops    |     | Streaming & Realtime        |   |
-|   | - OTLP Traces (Spans) |     | - AI RCA Synthesis    |     | - WebSocket Hub             |   |
-|   | - Centralized Logs    |     | - Auto Runbooks       |     | - Live Metric Streaming     |   |
-|   | - Kubernetes Nodes    |     | - Service Dependency  |     | - State Sync                |   |
+|   | Observability Core    |     | Synthetic Checks      |     | Streaming & Realtime        |   |
+|   | - TimescaleDB Metrics |     | - HTTP Endpoint Probe |     | - WebSocket Hub             |   |
+|   | - Centralized Logs    |     | - TCP Port Probe      |     | - Live Metric Streaming     |   |
+|   | - Multi-Node Query    |     | - Latency & Uptime    |     | - State Sync                |   |
 |   +-----------+-----------+     +-----------+-----------+     +--------------+--------------+   |
 |               |                             |                                |                  |
 |               +-----------------------------+--------------------------------+                  |
@@ -68,19 +73,23 @@ SentriX is a modern, lightweight, high-performance infrastructure monitoring and
 |                                             v                                                   |
 |                                  +--------------------+                                         |
 |                                  | TimescaleDB (pg16) |                                         |
-|                                  | - Hypertables      |                                         |
-|                                  | - Continuous Aggs  |                                         |
-|                                  | - Retention Policy |                                         |
+|                                  | - metric_cpu       |                                         |
+|                                  | - metric_memory    |                                         |
+|                                  | - metric_disk      |                                         |
+|                                  | - logs & incidents |                                         |
 |                                  +--------------------+                                         |
 +-------------------------------------------------------------------------------------------------+
                                               |
                                               v
                          +------------------------------------------+
-                         |           React Web Dashboard            |
-                         |  - Fleet Bento Grid & 1-Click Enrollment |
-                         |  - OTel Traces Waterfall & Central Logs  |
-                         |  - Kubernetes Cluster & Workload Views   |
-                         |  - AI Incident Triage & Runbook Runner   |
+                         |       React 18 Observability Canvas      |
+                         |  - Fleet Overview & 1-Click Enrollment   |
+                         |  - Custom Dashboards & Live Telemetry    |
+                         |  - Metrics Explorer (TimescaleDB Query)  |
+                         |  - Central Logs Search & Live Tail       |
+                         |  - Incident Triage, Rules & Silences     |
+                         |  - Synthetic Health Checks               |
+                         |  - Developer API Keys & Audit Trail      |
                          +------------------------------------------+
 ```
 
@@ -116,9 +125,7 @@ Access the dashboard at **[http://localhost:8080](http://localhost:8080)**:
 - **Demo User**: `admin@sentrix.local`
 - **Demo Password**: `admin12345` (only enabled in standalone demo mode)
 
-> **Platform Note**: The SentriX server control plane is cross-platform and can be compiled and run on Linux, macOS, or Windows. The native C agent (`sentrix-agent`) is specifically engineered for Linux server hosts, reading directly from the Linux `/proc` kernel filesystem with systemd service integration.
-
-> **Production Security Note**: When connecting to a persistent database in production, SentriX generates a cryptographically secure 20-character random password on first run and outputs it to the server logs (or uses `SENTRIX_ADMIN_PASSWORD`). Change the administrator password immediately upon first login. Brute-force protection and IP rate limiting are active by default on `/api/v1/auth/login`.
+> **Platform Note**: The SentriX server control plane is cross-platform (Linux, macOS, Windows). The native C agent (`sentrix-agent`) is specifically engineered for Linux server hosts, reading directly from the Linux `/proc` kernel filesystem with systemd service integration.
 
 ---
 
@@ -151,31 +158,46 @@ docker compose down
 
 ---
 
-## 🔍 Observability Capabilities
+## 🔍 Core Observability Features
 
-### 1. OpenTelemetry Distributed Tracing
-SentriX provides full trace visibility across distributed microservices:
-- **OTLP Ingestion**: Native endpoints at `/api/v1/otlp/v1/traces`, `/api/v1/v1/traces`, and `/api/v1/traces`.
-- **Waterfall Timeline**: Detailed span duration, child spans, parent-child relationships, and root operations.
-- **Latency & Error Breakdown**: Highlights slowest database queries, external API calls, and unhandled 5xx errors.
+### 1. Fleet Overview (`/`)
+- **Real-Time Host Grid**: Live CPU, memory, and disk saturation bars, host uptime, kernel version, and agent release.
+- **Instant Search & Status Filter**: Search by hostname, IP address, or node ID, and filter by status (`ONLINE`, `SUSPECT`, `OFFLINE`).
+- **1-Click Agent Enrollment**: Generate cryptographically hashed, single-use tokens valid for 24 hours with automatic copyable curl/bash commands.
+- **Server Details Drill-Down** (`/servers/:id`): Deep inspection with interactive time-series charts across multiple lookback windows (15m, 1h, 6h, 24h, 7d).
 
-### 2. Centralized Log Aggregation
-- **Multi-Stream Search**: Filter logs by service name, log severity (`DEBUG`, `INFO`, `WARN`, `ERROR`), host ID, and time window.
-- **Trace-to-Log Correlation**: Jump directly from a failing trace span to its correlated log entries using `trace_id`.
-- **High-Velocity Ingest**: Batch ingestion endpoint at `/api/v1/logs/batch` with streaming ingestion buffers.
+### 2. Custom Dashboards (`/dashboards`)
+- **Operational Workspaces**: Build custom monitoring canvases with multi-metric line charts, saturation gauges, error log streams, and active incident lists.
+- **Node Switching**: Toggle metrics instantly between any enrolled production node.
+- **Real-Time Auto-Refresh**: 10-second automatic background refresh synchronized with incoming telemetry.
 
-### 3. Kubernetes & Container Observability
-- **Cluster & Node Health**: Monitor CPU/Memory node capacity, kernel version, OS image, and kubelet status.
-- **Workload & Pod Lifecycle**: Real-time distribution of Pod phases (`Running`, `Pending`, `Failed`, `CrashLoopBackOff`).
-- **Deployment Tracking**: Track desired vs. available replicas, restart counters, and container crash events.
+### 3. Metrics Explorer (`/metrics`)
+- **TimescaleDB Multi-Node Analytics**: Query and compare metrics across multiple server nodes simultaneously.
+- **Flexible Metrics & Aggregation**: Select metrics (`system.cpu.utilization`, `system.memory.utilization`, `system.disk.utilization`) across custom time intervals (`15m`, `1h`, `6h`, `24h`, `7d`).
+- **Raw Export & API Access**: Integrated endpoint at `/api/v1/metrics/query` for automated scraping or external tooling.
 
-### 4. AI-Powered Root Cause Analysis (RCA)
-- **Multi-Signal Anomaly Correlation**: When an incident occurs, SentriX correlates metric spikes, log errors, and trace spans.
-- **Automated Incident Narratives**: Generates an incident summary, identified root cause hypothesis, and actionable remediation steps (`/api/v1/ai/rca`).
+### 4. Centralized Structured Logs (`/logs`)
+- **High-Velocity Aggregation**: Central log repository powered by PostgreSQL with full-text search.
+- **Multi-Field Filtering**: Filter by service name, log level (`DEBUG`, `INFO`, `WARN`, `ERROR`), host ID, and time window.
+- **Live Tail Mode**: Real-time log stream streaming directly to the browser console.
 
-### 5. Operational Runbooks & Safe Automation
-- **Automated Remediation**: Trigger verified operational runbooks (e.g., PostgreSQL connection pool drain, cache purges, agent offline buffer diagnostics) directly from the UI or via API (`/api/v1/runbooks/{id}/execute`).
-- **Safety Gates & Auditing**: Review pre-execution step plans and track execution history with operator audit trails.
+### 5. Incidents, Alert Rules & Silences (`/incidents`, `/alerts`)
+- **Threshold Rule Engine**: Configure rules with custom thresholds, duration windows, severity levels (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`), and automatic resolution.
+- **Incident Lifecycle**: Comprehensive triage workflows supporting `OPEN`, `ACKNOWLEDGED`, and `RESOLVED` statuses with operator notes.
+- **Maintenance Windows (Silences)**: Suppress alert firing during scheduled maintenance windows to avoid notification fatigue.
+- **Notification Channels**: Webhook dispatchers for Slack, Discord, PagerDuty, and custom HTTPS endpoints with SSRF protection.
+
+### 6. Synthetic Health Checks (`/checks`)
+- **Multi-Protocol Monitoring**: Create recurring HTTP/HTTPS and TCP endpoint probe checks.
+- **Availability & Latency Tracking**: Tracks response times, DNS lookup latency, TLS negotiation times, and uptime percentages.
+
+### 7. Developer Platform & Scoped API Keys (`/api-keys`)
+- **Programmatic Ingestion**: Issue scoped API keys for external metric or log shippers.
+- **Secret Security**: API keys are shown only once upon generation and stored as SHA-256 hashes in the database.
+
+### 8. Team Management & Audit Trail (`/users`, `/audit`)
+- **Role-Based Access Control**: Assign granular roles (`ADMIN`, `OPERATOR`, `VIEWER`) to team members.
+- **Immutable Security Audit Log**: Tracks all security-critical operations, authentication attempts, rule creations, and user actions with actor IP addresses and timestamps.
 
 ---
 
@@ -185,7 +207,7 @@ SentriX provides full trace visibility across distributed microservices:
 1. Navigate to the **Fleet Overview** in the dashboard.
 2. Click **"Enroll Node"**.
 3. Generate a single-use, 24-hour cryptographically hashed enrollment token.
-4. Execute the enrollment command over HTTPS with certificate verification:
+4. Execute the enrollment script over HTTPS with certificate hostname verification:
 
 ```bash
 # Download and install agent binary
@@ -217,7 +239,20 @@ SENTRIX_PORT=8080
 SENTRIX_AGENT_ID=srv-node-01
 SENTRIX_TOKEN=stx_enroll_token_xyz
 SENTRIX_INTERVAL=5
+SENTRIX_ENFORCE_TLS=true
 ```
+
+---
+
+## 🔒 Security Hardening
+
+SentriX incorporates strict enterprise security controls:
+- **Mandatory TLS Hostname Verification**: Agent enforces `SSL_set1_host` and `X509_check_host` to prevent MITM attacks.
+- **Zero Refresh Token Leakage**: Refresh tokens are delivered strictly via `HttpOnly`, `SameSite=Strict` cookies and are never exposed in JSON response bodies.
+- **Trusted Reverse Proxy IP Handling**: IP rate limiting and audit logging sanitize forwarded headers, trusting `X-Forwarded-For` only from configured proxy CIDRs (`SENTRIX_TRUSTED_PROXIES`).
+- **Request Body Size Limits**: Global and per-route `http.MaxBytesReader` enforcement protects against payload-based memory exhaustion attacks.
+- **Session Revocation on Password Change**: Changing a user's password immediately invalidates all issued refresh tokens for that account.
+- **Hashed Agent Credentials**: Agents authenticate using SHA-256 hashed credentials stored in TimescaleDB with zero plaintext fallbacks.
 
 ---
 
@@ -226,25 +261,32 @@ SENTRIX_INTERVAL=5
 | Method | Endpoint | Description |
 |---|---|---|
 | `POST` | `/api/v1/auth/login` | Authenticate user credentials & issue JWT tokens |
-| `POST` | `/api/v1/auth/refresh` | Refresh expired access tokens |
+| `POST` | `/api/v1/auth/refresh` | Refresh expired access tokens via HttpOnly cookie |
+| `POST` | `/api/v1/auth/logout` | Revoke active refresh session and clear cookies |
+| `POST` | `/api/v1/auth/change-password` | Update user password & revoke all active sessions |
 | `POST` | `/api/v1/auth/ws-ticket` | Generate temporary single-use ticket for WebSocket streaming |
 | `GET` | `/api/v1/dashboard/summary` | Global fleet counts, health statistics, and metrics |
 | `GET` | `/api/v1/servers` | List registered server nodes and online/offline status |
+| `GET` | `/api/v1/servers/{id}` | Retrieve details and latest metrics for a single node |
 | `DELETE` | `/api/v1/servers/{id}` | Decommission server node and purge telemetry (`ADMIN` only) |
-| `GET` | `/api/v1/servers/{id}/metrics` | Historical time-series metrics query |
+| `GET` | `/api/v1/servers/{id}/metrics` | Historical time-series metrics query for a single node |
+| `GET` | `/api/v1/metrics/query` | Cross-node multi-server TimescaleDB time-series query |
 | `POST` | `/api/v1/agent/telemetry` | High-throughput metric ingestion from C agents |
 | `POST` | `/api/v1/agents/enrollment-tokens` | Generate 24-hour single-use agent enrollment tokens |
-| `GET` | `/api/v1/traces` | Query distributed OpenTelemetry trace spans |
-| `POST` | `/api/v1/otlp/v1/traces` | OTLP/HTTP distributed trace span ingestion |
 | `GET` | `/api/v1/logs` | Centralized log search across services and severity levels |
 | `POST` | `/api/v1/logs/batch` | High-throughput structured log ingestion |
-| `GET` | `/api/v1/kubernetes/overview` | Kubernetes cluster overview and node capacity status |
-| `GET` | `/api/v1/kubernetes/workloads` | Kubernetes pod health, phases, and container restarts |
-| `POST` | `/api/v1/ai/rca` | Trigger AI multi-signal root cause analysis on incidents |
-| `GET` | `/api/v1/runbooks` | List executable operational remediation runbooks |
-| `POST` | `/api/v1/runbooks/{id}/execute` | Execute an operational remediation playbook |
+| `GET` | `/api/v1/incidents` | List active, acknowledged, and resolved incidents |
+| `PATCH` | `/api/v1/incidents/{id}/status` | Update incident triage status and resolution notes |
+| `GET` | `/api/v1/alerts/rules` | List configured metric alert threshold rules |
+| `POST` | `/api/v1/alerts/rules` | Create a new alert rule with threshold and duration |
+| `GET` | `/api/v1/checks` | List synthetic HTTP/TCP health checks |
+| `POST` | `/api/v1/checks` | Create a new synthetic health check probe |
+| `GET` | `/api/v1/api-keys` | List active developer API keys |
+| `POST` | `/api/v1/api-keys` | Generate a new developer API key |
+| `DELETE` | `/api/v1/api-keys/{id}` | Revoke an API key |
 | `GET` | `/api/v1/users` | List workspace team members |
 | `POST` | `/api/v1/users/invite` | Invite team members with RBAC (`ADMIN`, `OPERATOR`, `VIEWER`) |
+| `GET` | `/api/v1/audit/logs` | Query immutable security audit log trail |
 | `GET` | `/api/v1/notifications/channels` | List notification destinations (masked URLs) |
 | `POST` | `/api/v1/notifications/channels` | Create Slack/Discord/PagerDuty webhook channels |
 | `POST` | `/api/v1/notifications/channels/{id}/test` | Trigger SSRF-safe instant webhook verification test |
@@ -256,9 +298,10 @@ SENTRIX_INTERVAL=5
 Run the test suite across components:
 
 ```bash
-# Run Go unit tests
+# Run Go unit tests and vet
 cd server
 go test -v ./...
+go vet ./...
 
 # Build and type-check frontend
 cd ../web
