@@ -578,8 +578,9 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 	initStore()
 
 	// Public Auth routes
+	demoLoginLimiter := security.NewRateLimiter(5.0/60.0, 5) // 5 login attempts per min per IP
 	r.Route("/auth", func(r chi.Router) {
-		r.Post("/login", func(w http.ResponseWriter, r *http.Request) {
+		r.With(security.HTTPRateLimit(demoLoginLimiter, security.IPKey, "Too many login attempts. Please try again later.")).Post("/login", func(w http.ResponseWriter, r *http.Request) {
 			var body struct {
 				Email    string `json:"email"`
 				Password string `json:"password"`
@@ -681,9 +682,19 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 			_ = json.NewDecoder(r.Body).Decode(&body)
 
 			refreshToken := body.RefreshToken
+			isCookie := false
 			if refreshToken == "" {
-				if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil {
+				if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil && cookie.Value != "" {
 					refreshToken = cookie.Value
+					isCookie = true
+				}
+			}
+
+			if isCookie {
+				origin := r.Header.Get("Origin")
+				if origin == "" && r.Header.Get("Referer") == "" {
+					http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+					return
 				}
 			}
 
@@ -741,9 +752,19 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 			_ = json.NewDecoder(r.Body).Decode(&body)
 
 			refreshToken := body.RefreshToken
+			isCookie := false
 			if refreshToken == "" {
-				if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil {
+				if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil && cookie.Value != "" {
 					refreshToken = cookie.Value
+					isCookie = true
+				}
+			}
+
+			if isCookie {
+				origin := r.Header.Get("Origin")
+				if origin == "" && r.Header.Get("Referer") == "" {
+					http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+					return
 				}
 			}
 

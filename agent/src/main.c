@@ -211,8 +211,23 @@ int main(int argc, char *argv[]) {
     maybe_drop_privileges();
 
     DiskBuffer spool_buf;
-    if (buffer_init(&spool_buf, "sentrix_spool.bin", 0) == 0) {
-        printf("Initialized local disk spool buffer (%d records queued).\n", spool_buf.items_queued);
+    const char *spool_path = getenv("SENTRIX_SPOOL_PATH");
+    if (!spool_path) {
+#ifndef _WIN32
+        // Prefer /var/lib/sentrix/sentrix_spool.bin if the directory exists and is writable
+        if (access("/var/lib/sentrix", W_OK) == 0) {
+            spool_path = "/var/lib/sentrix/sentrix_spool.bin";
+        } else {
+            spool_path = "sentrix_spool.bin";
+        }
+#else
+        spool_path = "sentrix_spool.bin";
+#endif
+    }
+    if (buffer_init(&spool_buf, spool_path, 0) == 0) {
+        printf("Initialized local disk spool buffer at %s (%d records queued).\n", spool_buf.file_path, spool_buf.items_queued);
+    } else {
+        fprintf(stderr, "WARNING: Failed to initialize disk spool buffer at %s. Offline telemetry disk caching disabled.\n", spool_path);
     }
 
     uint64_t sequence = 1;

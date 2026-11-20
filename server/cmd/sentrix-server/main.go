@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -53,6 +54,9 @@ import (
 
 func main() {
 	slog.Info("Starting SentriX Server...")
+
+	// Finding 7: Validate and initialize JWT configuration at startup (fail-closed in production)
+	auth.InitJWT()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -417,8 +421,29 @@ func main() {
 		port = "8080"
 	}
 
+	isDemo := !isDBLive
+	listenHost := os.Getenv("HOST")
+	if isDemo {
+		// Finding 2: In demo mode, bind to 127.0.0.1 by default. Require explicit override and strong custom password if exposed externally.
+		if listenHost == "" {
+			if strings.EqualFold(os.Getenv("SENTRIX_DEMO_ALLOW_EXTERNAL"), "true") {
+				listenHost = "" // all interfaces
+				demoPass := os.Getenv("SENTRIX_DEMO_PASSWORD")
+				if demoPass == "" || demoPass == "admin12345" {
+					slog.Error("FATAL: External demo access (SENTRIX_DEMO_ALLOW_EXTERNAL=true) requires a custom non-default SENTRIX_DEMO_PASSWORD. Aborting startup.")
+					os.Exit(1)
+				}
+			} else {
+				listenHost = "127.0.0.1"
+				slog.Info("Demo mode active: bound to loopback interface 127.0.0.1 for security. Pass SENTRIX_DEMO_ALLOW_EXTERNAL=true and set custom SENTRIX_DEMO_PASSWORD to expose externally.")
+			}
+		}
+	}
+
+	listenAddr := net.JoinHostPort(listenHost, port)
+
 	srv := &http.Server{
-		Addr:              ":" + port,
+		Addr:              listenAddr,
 		Handler:           r,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
@@ -428,7 +453,11 @@ func main() {
 	}
 
 	go func() {
-		slog.Info("SentriX Server listening", "url", "http://localhost:"+port)
+		displayHost := listenHost
+		if displayHost == "" {
+			displayHost = "localhost"
+		}
+		slog.Info("SentriX Server listening", "url", "http://"+displayHost+":"+port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("Server failed", "error", err)
 			stop()

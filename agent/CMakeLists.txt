@@ -48,7 +48,16 @@ target_compile_definitions(sentrix-agent PRIVATE
     SENTRIX_VERSION_STRING="${SENTRIX_VERSION_STRING}"
 )
 
-find_package(OpenSSL QUIET)
+option(SENTRIX_INSECURE_DEV_NO_TLS "Allow building sentrix-agent without OpenSSL (development only)" OFF)
+
+if(SENTRIX_INSECURE_DEV_NO_TLS)
+    find_package(OpenSSL QUIET)
+    if(NOT OPENSSL_FOUND)
+        message(WARNING "Building sentrix-agent without OpenSSL! Insecure dev build only - TLS transport disabled.")
+    endif()
+else()
+    find_package(OpenSSL REQUIRED)
+endif()
 
 target_link_libraries(sentrix-agent m)
 

@@ -102,33 +102,52 @@ func ClientIP(r *http.Request) string {
 	}
 
 	// Only honor X-Forwarded-For if request came from a trusted reverse proxy
-	if !isTrustedProxy(remoteHost) {
+	if !IsTrustedProxy(remoteHost) {
 		return remoteHost
 	}
 
 	forwarded := r.Header.Get("X-Forwarded-For")
-	if forwarded != "" {
-		parts := strings.Split(forwarded, ",")
-		clientIP := strings.TrimSpace(parts[0])
-		if clientIP != "" && net.ParseIP(clientIP) != nil {
-			return clientIP
+	if forwarded == "" {
+		return remoteHost
+	}
+
+	parts := strings.Split(forwarded, ",")
+	// Parse right to left: the client IP is the rightmost IP that is NOT a trusted proxy.
+	// This prevents attackers from injecting arbitrary spoofed IPs at the beginning of the chain.
+	var candidate string
+	for i := len(parts) - 1; i >= 0; i-- {
+		ipStr := strings.TrimSpace(parts[i])
+		if ipStr == "" || net.ParseIP(ipStr) == nil {
+			continue
 		}
+		if !IsTrustedProxy(ipStr) {
+			return ipStr
+		}
+		candidate = ipStr
+	}
+
+	if candidate != "" {
+		return candidate
 	}
 
 	return remoteHost
 }
 
-func isTrustedProxy(remoteHost string) bool {
+func IsTrustedProxy(remoteHost string) bool {
 	ip := net.ParseIP(remoteHost)
 	if ip == nil {
 		return false
 	}
 
-	if ip.IsLoopback() {
+	// Loopback is trusted only if explicitly requested via env or configured in trusted CIDRs
+	if ip.IsLoopback() && os.Getenv("SENTRIX_TRUST_LOOPBACK_PROXY") == "true" {
 		return true
 	}
 
-	trustedEnv := os.Getenv("TRUSTED_PROXIES")
+	trustedEnv := strings.TrimSpace(os.Getenv("SENTRIX_TRUSTED_PROXIES"))
+	if trustedEnv == "" {
+		trustedEnv = strings.TrimSpace(os.Getenv("TRUSTED_PROXIES"))
+	}
 	if trustedEnv == "" {
 		return false
 	}

@@ -6,13 +6,81 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"net"
 	"net/http"
+	"net/url"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/security"
 )
+
+func validateCSRF(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		referer := r.Header.Get("Referer")
+		if referer != "" {
+			if u, err := url.Parse(referer); err == nil {
+				origin = u.Scheme + "://" + u.Host
+			}
+		}
+	}
+
+	if origin == "" {
+		// Reject cookie-authenticated state-changing requests with no Origin and no Referer
+		return false
+	}
+
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	reqHost := r.Host
+	if reqHost == "" {
+		reqHost = r.URL.Host
+	}
+
+	remoteHost, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		remoteHost = r.RemoteAddr
+	}
+	if security.IsTrustedProxy(remoteHost) {
+		if xfh := r.Header.Get("X-Forwarded-Host"); xfh != "" {
+			reqHost = strings.TrimSpace(strings.Split(xfh, ",")[0])
+		}
+	}
+
+	if strings.EqualFold(originURL.Host, reqHost) {
+		return true
+	}
+
+	allowed := os.Getenv("ALLOWED_ORIGINS")
+	if allowed != "" {
+		for _, o := range strings.Split(allowed, ",") {
+			o = strings.TrimSpace(o)
+			if o == "*" || strings.EqualFold(o, origin) {
+				return true
+			}
+		}
+	}
+
+	originHostname := originURL.Hostname()
+	reqHostname := reqHost
+	if h, _, err := net.SplitHostPort(reqHost); err == nil {
+		reqHostname = h
+	}
+	if (originHostname == "localhost" || originHostname == "127.0.0.1") &&
+		(reqHostname == "localhost" || reqHostname == "127.0.0.1") {
+		return true
+	}
+
+	return false
+}
 
 type loginRequest struct {
 	Email    string `json:"email"`
@@ -201,10 +269,17 @@ func HandleRefresh(pool *pgxpool.Pool) http.HandlerFunc {
 		var req refreshRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
 
-		if req.RefreshToken == "" {
-			if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil {
+		isCookieAuth := false
+		if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil && cookie.Value != "" {
+			isCookieAuth = true
+			if req.RefreshToken == "" {
 				req.RefreshToken = cookie.Value
 			}
+		}
+
+		if isCookieAuth && !validateCSRF(r) {
+			http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+			return
 		}
 
 		if req.RefreshToken == "" {
@@ -319,10 +394,17 @@ func HandleLogout(pool *pgxpool.Pool) http.HandlerFunc {
 		var req refreshRequest
 		_ = json.NewDecoder(r.Body).Decode(&req)
 
-		if req.RefreshToken == "" {
-			if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil {
+		isCookieAuth := false
+		if cookie, err := r.Cookie("sentrix_refresh_token"); err == nil && cookie.Value != "" {
+			isCookieAuth = true
+			if req.RefreshToken == "" {
 				req.RefreshToken = cookie.Value
 			}
+		}
+
+		if isCookieAuth && !validateCSRF(r) {
+			http.Error(w, "cross-origin request forbidden", http.StatusForbidden)
+			return
 		}
 
 		if req.RefreshToken != "" {

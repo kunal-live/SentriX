@@ -64,6 +64,11 @@ func jwtSecret() []byte {
 	return activeSecret
 }
 
+// InitJWT validates the JWT secret configuration at startup, ensuring fail-closed behavior before serving requests.
+func InitJWT() {
+	_ = jwtSecret()
+}
+
 func GenerateAccessToken(userID, email, role string) (string, time.Time, error) {
 	now := time.Now()
 	expiresAt := now.Add(accessTokenTTL)

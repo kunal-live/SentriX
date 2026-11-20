@@ -24,6 +24,7 @@ echo "Creating directories..."
 
 install -d /opt/sentrix/bin
 install -d /etc/sentrix
+install -d -m 0700 -o sentrix -g sentrix /var/lib/sentrix 2>/dev/null || install -d -m 0700 /var/lib/sentrix
 
 echo "Installing agent binary..."
 
