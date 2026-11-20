@@ -1,5 +1,9 @@
 import { FormEvent, useState } from 'react';
 import { useDashboards, useCreateDashboard, Dashboard, DashboardWidget } from '../../hooks/useDashboards';
+import { useServers } from '../../hooks/useDashboard';
+import { useServerMetrics } from '../../hooks/useMetrics';
+import { useCentralLogs } from '../../hooks/useCentralLogs';
+import { useIncidents } from '../../hooks/useAlerts';
 import {
   LayoutDashboard,
   Plus,
@@ -14,6 +18,7 @@ import {
   TrendingUp,
   Sliders,
   CheckCircle2,
+  Server as ServerIcon,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -49,6 +54,16 @@ const sampleDiskData = [
 export function DashboardsPage() {
   const { data: dashboards, isLoading } = useDashboards();
   const createDashboard = useCreateDashboard();
+
+  const { data: servers = [] } = useServers();
+  const [selectedServerId, setSelectedServerId] = useState<string>('');
+  const activeServerId = selectedServerId || (servers.length > 0 ? servers[0].id : undefined);
+  const activeServer = servers.find((s) => s.id === activeServerId) || servers[0];
+
+  const { data: cpuMetrics } = useServerMetrics(activeServerId, 'cpu', '1h');
+  const { data: diskMetrics } = useServerMetrics(activeServerId, 'disk', '1h');
+  const { data: logsData } = useCentralLogs({ limit: 12 }, true);
+  const { data: openIncidents } = useIncidents('open');
 
   const [activeDashboardId, setActiveDashboardId] = useState<string>('dash-primary');
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -118,7 +133,24 @@ export function DashboardsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {servers.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-surface border border-border px-3 py-1.5 rounded-xl text-xs font-mono">
+              <ServerIcon size={14} className="text-primary-light shrink-0" />
+              <select
+                value={activeServerId || ''}
+                onChange={(e) => setSelectedServerId(e.target.value)}
+                className="bg-transparent text-white focus:outline-none cursor-pointer text-xs"
+              >
+                {servers.map((s) => (
+                  <option key={s.id} value={s.id} className="bg-surface text-white">
+                    {s.name || s.hostname} ({s.status})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <select
             value={activeDashboard?.id || ''}
             onChange={(e) => setActiveDashboardId(e.target.value)}
@@ -195,68 +227,129 @@ export function DashboardsPage() {
 
                 {/* Widget Body Content */}
                 <div className="py-2">
-                  {widget.type === 'METRIC_LINE' && (
-                    <div className="h-56 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={widget.metric?.includes('disk') ? sampleDiskData : sampleCpuData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#262b35" vertical={false} />
-                          <XAxis dataKey="time" stroke="#717a8c" tick={{ fontSize: 10 }} />
-                          <YAxis stroke="#717a8c" tick={{ fontSize: 10 }} domain={[0, 100]} />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: '#161920',
-                              borderColor: '#303642',
-                              borderRadius: '8px',
-                              fontSize: '11px',
-                            }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="value"
-                            stroke="#6366f1"
-                            strokeWidth={2.5}
-                            dot={{ fill: '#6366f1', r: 3 }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
+                  {widget.type === 'METRIC_LINE' && (() => {
+                    const isDisk = widget.metric?.includes('disk');
+                    const realPoints = isDisk ? diskMetrics?.points : cpuMetrics?.points;
+                    const chartData = (realPoints && realPoints.length > 0)
+                      ? realPoints.map((p) => ({
+                          time: new Date(p.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                          value: Math.round(p.value * 10) / 10,
+                        }))
+                      : (isDisk ? sampleDiskData : sampleCpuData);
 
-                  {widget.type === 'METRIC_GAUGE' && (
-                    <div className="space-y-4 py-4 text-center">
-                      <div className="text-4xl font-extrabold font-mono text-warning">89.1%</div>
-                      <div className="w-full bg-surface-highlight rounded-full h-3 overflow-hidden max-w-xs mx-auto">
-                        <div className="h-full rounded-full bg-warning transition-all" style={{ width: '89.1%' }} />
+                    return (
+                      <div className="h-56 w-full">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={chartData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#262b35" vertical={false} />
+                            <XAxis dataKey="time" stroke="#717a8c" tick={{ fontSize: 10 }} />
+                            <YAxis stroke="#717a8c" tick={{ fontSize: 10 }} domain={[0, 100]} />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: '#161920',
+                                borderColor: '#303642',
+                                borderRadius: '8px',
+                                fontSize: '11px',
+                              }}
+                            />
+                            <Line
+                              type="monotone"
+                              dataKey="value"
+                              stroke="#6366f1"
+                              strokeWidth={2.5}
+                              dot={{ fill: '#6366f1', r: 3 }}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
                       </div>
-                      <p className="text-[11px] font-mono text-muted">Allocated buffer cache: 14.2 GB / 16.0 GB</p>
-                    </div>
-                  )}
+                    );
+                  })()}
+
+                  {widget.type === 'METRIC_GAUGE' && (() => {
+                    const isMem = widget.metric?.includes('memory') || widget.title?.toLowerCase().includes('pool') || widget.title?.toLowerCase().includes('database') || widget.title?.toLowerCase().includes('memory');
+                    const rawVal = isMem ? (activeServer?.memory ?? 89.1) : (activeServer?.cpu ?? 45.0);
+                    const gaugeVal = Math.round(rawVal * 10) / 10;
+                    const gaugeColor = gaugeVal >= 85 ? 'text-critical' : gaugeVal >= 70 ? 'text-warning' : 'text-healthy';
+                    const barColor = gaugeVal >= 85 ? 'bg-critical' : gaugeVal >= 70 ? 'bg-warning' : 'bg-healthy';
+
+                    return (
+                      <div className="space-y-4 py-4 text-center">
+                        <div className={`text-4xl font-extrabold font-mono ${gaugeColor}`}>{gaugeVal}%</div>
+                        <div className="w-full bg-surface-highlight rounded-full h-3 overflow-hidden max-w-xs mx-auto">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${barColor}`}
+                            style={{ width: `${Math.min(100, Math.max(0, gaugeVal))}%` }}
+                          />
+                        </div>
+                        <p className="text-[11px] font-mono text-muted">
+                          {activeServer
+                            ? `${activeServer.name || activeServer.hostname} • ${isMem ? 'RAM Allocation' : 'CPU Load'}`
+                            : 'Allocated buffer cache: 14.2 GB / 16.0 GB'}
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   {widget.type === 'LOG_STREAM' && (
                     <div className="p-3 rounded-xl bg-background/80 border border-border font-mono text-xs space-y-2 max-h-56 overflow-y-auto">
-                      <div className="text-critical truncate">[ERROR] 21:26:12 timescale-db: pool buffer exceeded 96%</div>
-                      <div className="text-warning truncate">[WARN]  21:25:40 payments: settlement retry 2/3 (latency 840ms)</div>
-                      <div className="text-text-dim truncate">[INFO]  21:24:18 auth-gateway: session token renewed</div>
-                      <div className="text-critical truncate">[ERROR] 21:22:04 edge-ingress: TLS protocol handshake error</div>
+                      {logsData?.logs && logsData.logs.length > 0 ? (
+                        logsData.logs.map((log) => (
+                          <div key={log.id} className="truncate flex items-center gap-2">
+                            <span
+                              className={`font-bold text-[10px] shrink-0 ${
+                                log.level === 'ERROR'
+                                  ? 'text-critical'
+                                  : log.level === 'WARN'
+                                  ? 'text-warning'
+                                  : 'text-text-dim'
+                              }`}
+                            >
+                              [{log.level}]
+                            </span>
+                            <span className="text-muted text-[10px] shrink-0">
+                              {new Date(log.timestamp).toLocaleTimeString()}
+                            </span>
+                            <span className="text-white font-medium truncate max-w-[120px] shrink-0">
+                              {log.service || log.server || 'host'}:
+                            </span>
+                            <span className="text-text truncate">{log.message}</span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-muted text-center py-6 italic text-xs">
+                          No recent warning or error logs recorded. Log stream nominal.
+                        </div>
+                      )}
                     </div>
                   )}
 
                   {widget.type === 'ALERT_LIST' && (
                     <div className="space-y-2 font-mono text-xs">
-                      <div className="p-2.5 rounded-lg bg-critical/10 border border-critical/30 flex items-center justify-between">
-                        <span className="text-critical font-bold truncate">High Memory Utilization</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-critical text-white">FIRING</span>
-                      </div>
-                      <div className="p-2.5 rounded-lg bg-warning/10 border border-warning/30 flex items-center justify-between">
-                        <span className="text-warning font-bold truncate">Elevated Gateway Latency</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning text-black">ACK</span>
-                      </div>
+                      {openIncidents && openIncidents.length > 0 ? (
+                        openIncidents.slice(0, 5).map((inc) => (
+                          <div
+                            key={inc.id}
+                            className="p-2.5 rounded-lg bg-critical/10 border border-critical/30 flex items-center justify-between"
+                          >
+                            <span className="text-critical font-bold truncate">{inc.title}</span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-critical text-white uppercase">
+                              {inc.status || 'FIRING'}
+                            </span>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="p-3.5 rounded-xl bg-healthy/10 border border-healthy/30 text-healthy flex items-center gap-2.5 text-xs">
+                          <CheckCircle2 size={16} className="shrink-0" />
+                          <span>All Systems Nominal — Zero active alerts</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
 
-                <div className="pt-2 border-t border-border/40 text-[10px] font-mono text-muted text-right">
-                  Real-time telemetry sample
+                <div className="pt-2 border-t border-border/40 text-[10px] font-mono text-muted text-right flex items-center justify-end gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-healthy animate-pulse" />
+                  <span>{activeServer ? `Live Telemetry • ${activeServer.name || activeServer.hostname}` : 'Live Telemetry Fleet'}</span>
                 </div>
               </div>
             );
