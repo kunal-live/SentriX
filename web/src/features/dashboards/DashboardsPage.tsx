@@ -30,27 +30,6 @@ import {
   CartesianGrid,
 } from 'recharts';
 
-// Synthetic sample points for dashboard charts
-const sampleCpuData = [
-  { time: '10:00', value: 34 },
-  { time: '10:10', value: 38 },
-  { time: '10:20', value: 42 },
-  { time: '10:30', value: 78 },
-  { time: '10:40', value: 85 },
-  { time: '10:50', value: 52 },
-  { time: '11:00', value: 36 },
-];
-
-const sampleDiskData = [
-  { time: '10:00', value: 72 },
-  { time: '10:10', value: 73 },
-  { time: '10:20', value: 74 },
-  { time: '10:30', value: 76 },
-  { time: '10:40', value: 81 },
-  { time: '10:50', value: 82 },
-  { time: '11:00', value: 82 },
-];
-
 export function DashboardsPage() {
   const { data: dashboards, isLoading } = useDashboards();
   const createDashboard = useCreateDashboard();
@@ -235,7 +214,17 @@ export function DashboardsPage() {
                           time: new Date(p.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
                           value: Math.round(p.value * 10) / 10,
                         }))
-                      : (isDisk ? sampleDiskData : sampleCpuData);
+                      : [];
+
+                    if (chartData.length === 0) {
+                      return (
+                        <div className="h-56 w-full flex flex-col items-center justify-center text-muted text-xs font-mono border border-dashed border-border/60 rounded-xl space-y-2">
+                          <Activity size={22} className="text-muted/40 animate-pulse" />
+                          <span>Awaiting live {isDisk ? 'disk' : 'CPU'} metrics for {activeServer?.name || activeServer?.hostname || 'node'}</span>
+                          <span className="text-[10px] text-text-dim">Streaming from TimescaleDB</span>
+                        </div>
+                      );
+                    }
 
                     return (
                       <div className="h-56 w-full">
@@ -267,7 +256,7 @@ export function DashboardsPage() {
 
                   {widget.type === 'METRIC_GAUGE' && (() => {
                     const isMem = widget.metric?.includes('memory') || widget.title?.toLowerCase().includes('pool') || widget.title?.toLowerCase().includes('database') || widget.title?.toLowerCase().includes('memory');
-                    const rawVal = isMem ? (activeServer?.memory ?? 89.1) : (activeServer?.cpu ?? 45.0);
+                    const rawVal = isMem ? (activeServer?.memory ?? 0) : (activeServer?.cpu ?? 0);
                     const gaugeVal = Math.round(rawVal * 10) / 10;
                     const gaugeColor = gaugeVal >= 85 ? 'text-critical' : gaugeVal >= 70 ? 'text-warning' : 'text-healthy';
                     const barColor = gaugeVal >= 85 ? 'bg-critical' : gaugeVal >= 70 ? 'bg-warning' : 'bg-healthy';
@@ -284,7 +273,7 @@ export function DashboardsPage() {
                         <p className="text-[11px] font-mono text-muted">
                           {activeServer
                             ? `${activeServer.name || activeServer.hostname} • ${isMem ? 'RAM Allocation' : 'CPU Load'}`
-                            : 'Allocated buffer cache: 14.2 GB / 16.0 GB'}
+                            : 'Awaiting host telemetry...'}
                         </p>
                       </div>
                     );

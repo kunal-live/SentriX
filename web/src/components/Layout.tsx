@@ -14,24 +14,9 @@ import {
   Layers,
   CheckCircle2,
   Users,
-  Bell,
   ShieldCheck,
   FileText,
-  Server,
-  GitCommit,
-  Globe,
-  Target,
-  Box,
-  Network,
-  Terminal,
-  Webhook,
-  Building2,
-  Rocket,
   Code,
-  TrendingUp,
-  Database,
-  Sparkles,
-  Zap,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useRealtime } from '../hooks/useRealtime';
@@ -60,48 +45,23 @@ export const navSections: NavSection[] = [
       { path: '/dashboards', label: 'Custom Dashboards', icon: LayoutDashboard },
       { path: '/metrics', label: 'Metrics Explorer', icon: Activity },
       { path: '/logs', label: 'Central Logs', icon: FileText },
-      { path: '/traces', label: 'Distributed Traces', icon: GitCommit },
-      { path: '/service-map', label: 'Service Dependency Map', icon: Globe },
-      { path: '/infrastructure', label: 'Infrastructure Fleet', icon: Server },
-      { path: '/containers', label: 'Containers', icon: Box },
-      { path: '/kubernetes', label: 'Kubernetes Fleet', icon: Network },
-      { path: '/databases', label: 'Databases & Postgres', icon: Database },
-      { path: '/network', label: 'Deep Network & TCP', icon: Network },
     ],
   },
   {
     id: 'reliability',
-    title: 'Reliability & SLOs',
+    title: 'Reliability & Alerts',
     items: [
       { path: '/incidents', label: 'Incidents', icon: AlertTriangle, badge: 'incidents' },
-      { path: '/alerts', label: 'Alert Rules 2.0', icon: BellRing },
-      { path: '/slos', label: 'SLOs & Reliability', icon: Target },
+      { path: '/alerts', label: 'Alert Rules', icon: BellRing },
       { path: '/checks', label: 'Health Checks', icon: Activity },
-      { path: '/runbooks', label: 'Runbooks & Automation', icon: Terminal },
-    ],
-  },
-  {
-    id: 'intelligence',
-    title: 'Topology & AI',
-    items: [
-      { path: '/intelligence', label: 'Intelligence 2.0 RCA', icon: Sparkles },
-      { path: '/deployments', label: 'Deployments & Changes', icon: Rocket },
-      { path: '/services', label: 'Services Catalog', icon: Layers },
-      { path: '/capacity', label: 'Capacity & FinOps', icon: TrendingUp },
-      { path: '/scale', label: 'HA & Scale Benchmarks', icon: Zap },
     ],
   },
   {
     id: 'platform',
-    title: 'Platform & Fleet',
+    title: 'Platform & Security',
     items: [
-      { path: '/agents', label: 'Agent Fleet 2.0', icon: Terminal },
-      { path: '/security', label: 'Security Center', icon: Shield },
-      { path: '/organizations', label: 'Organizations & Teams', icon: Building2 },
-      { path: '/integrations', label: 'Integrations & DLQ', icon: Webhook },
-      { path: '/api-keys', label: 'Developer Platform', icon: Code },
-      { path: '/compliance', label: 'Compliance & DR', icon: ShieldCheck },
       { path: '/users', label: 'Team & Access', icon: Users },
+      { path: '/api-keys', label: 'Developer Platform', icon: Code },
       { path: '/audit', label: 'Audit Logs', icon: ShieldCheck },
     ],
   },
@@ -433,20 +393,17 @@ export function Layout({ children }: { children: ReactNode }) {
             </span>
           </div>
 
-          {/* Center Search shortcut & Organization Switcher */}
+          {/* Platform Status Badge & Search shortcut */}
           <div className="hidden md:flex items-center gap-3">
-            <Link
-              to="/organizations"
-              title="Switch Tenant or Environment"
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface/80 hover:bg-surface border border-border hover:border-primary/40 text-xs font-mono transition-all group"
+            <div
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface/80 border border-border text-xs font-mono"
             >
-              <Building2 size={13} className="text-primary-light group-hover:scale-105 transition-transform" />
-              <span className="text-white font-semibold tracking-tight">Acme Corp</span>
-              <ChevronRight size={11} className="text-muted/60" />
+              <Shield size={13} className="text-primary-light" />
+              <span className="text-white font-semibold tracking-tight">SentriX Core</span>
               <span className="px-1.5 py-0.5 rounded bg-primary/20 text-primary-light font-bold text-[10px] border border-primary/30">
                 Production
               </span>
-            </Link>
+            </div>
 
             <button
               onClick={() => setCommandPaletteOpen(true)}

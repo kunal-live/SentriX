@@ -14,28 +14,9 @@ import { UsersPage } from './features/users/UsersPage';
 import { NotificationsPage } from './features/notifications/NotificationsPage';
 import { AuditLogsPage } from './features/audit/AuditLogsPage';
 import { MetricsExplorerPage } from './features/metrics/MetricsExplorerPage';
-import { ServicesPage } from './features/services/ServicesPage';
-import { InfrastructurePage } from './features/infrastructure/InfrastructurePage';
 import { CentralLogsPage } from './features/logs/CentralLogsPage';
-import { TracesPage } from './features/traces/TracesPage';
-import { ServiceMapPage } from './features/servicemap/ServiceMapPage';
-import { SLOPage } from './features/slo/SLOPage';
 import { DashboardsPage } from './features/dashboards/DashboardsPage';
-import { AgentsPage } from './features/agents/AgentsPage';
-import { ContainersPage } from './features/containers/ContainersPage';
-import { KubernetesPage } from './features/kubernetes/KubernetesPage';
-import { RunbooksPage } from './features/automation/RunbooksPage';
-import { IntegrationsPage } from './features/integrations/IntegrationsPage';
-import { SecurityCenterPage } from './features/security/SecurityCenterPage';
-import { OrganizationsPage } from './features/organizations/OrganizationsPage';
-import { DeploymentsPage } from './features/deployments/DeploymentsPage';
 import { DeveloperPlatformPage } from './features/developer/DeveloperPlatformPage';
-import { ScaleBenchmarksPage } from './features/scale/ScaleBenchmarksPage';
-import { CapacityFinOpsPage } from './features/capacity/CapacityFinOpsPage';
-import { DatabasesPage } from './features/databases/DatabasesPage';
-import { NetworkPage } from './features/network/NetworkPage';
-import { CompliancePage } from './features/compliance/CompliancePage';
-import { IntelligencePage } from './features/intelligence/IntelligencePage';
 import { LoginPage } from './features/auth/LoginPage';
 
 const queryClient = new QueryClient();
@@ -52,6 +33,7 @@ function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
 
+            {/* Core Observability */}
             <Route
               path="/"
               element={
@@ -75,6 +57,28 @@ function App() {
             />
 
             <Route
+              path="/servers/:serverId"
+              element={
+                <Protected>
+                  <Layout>
+                    <ServerDetailPage />
+                  </Layout>
+                </Protected>
+              }
+            />
+
+            <Route
+              path="/dashboards"
+              element={
+                <Protected>
+                  <Layout>
+                    <DashboardsPage />
+                  </Layout>
+                </Protected>
+              }
+            />
+
+            <Route
               path="/metrics"
               element={
                 <Protected>
@@ -86,16 +90,17 @@ function App() {
             />
 
             <Route
-              path="/servers/:serverId"
+              path="/logs"
               element={
                 <Protected>
                   <Layout>
-                    <ServerDetailPage />
+                    <CentralLogsPage />
                   </Layout>
                 </Protected>
               }
             />
 
+            {/* Reliability & Alerts */}
             <Route
               path="/incidents"
               element={
@@ -151,6 +156,7 @@ function App() {
               }
             />
 
+            {/* Platform & Security */}
             <Route
               path="/users"
               element={
@@ -168,182 +174,6 @@ function App() {
                 <Protected>
                   <Layout>
                     <AuditLogsPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/services"
-              element={
-                <Protected>
-                  <Layout>
-                    <ServicesPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/infrastructure"
-              element={
-                <Protected>
-                  <Layout>
-                    <InfrastructurePage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/logs"
-              element={
-                <Protected>
-                  <Layout>
-                    <CentralLogsPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/traces"
-              element={
-                <Protected>
-                  <Layout>
-                    <TracesPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/service-map"
-              element={
-                <Protected>
-                  <Layout>
-                    <ServiceMapPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/slos"
-              element={
-                <Protected>
-                  <Layout>
-                    <SLOPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/dashboards"
-              element={
-                <Protected>
-                  <Layout>
-                    <DashboardsPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/agents"
-              element={
-                <Protected>
-                  <Layout>
-                    <AgentsPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/containers"
-              element={
-                <Protected>
-                  <Layout>
-                    <ContainersPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/kubernetes"
-              element={
-                <Protected>
-                  <Layout>
-                    <KubernetesPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/runbooks"
-              element={
-                <Protected>
-                  <Layout>
-                    <RunbooksPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/integrations"
-              element={
-                <Protected>
-                  <Layout>
-                    <IntegrationsPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/security"
-              element={
-                <Protected>
-                  <Layout>
-                    <SecurityCenterPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/organizations"
-              element={
-                <Protected>
-                  <Layout>
-                    <OrganizationsPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/deployments"
-              element={
-                <Protected>
-                  <Layout>
-                    <DeploymentsPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/changes"
-              element={
-                <Protected>
-                  <Layout>
-                    <DeploymentsPage />
                   </Layout>
                 </Protected>
               }
@@ -371,85 +201,33 @@ function App() {
               }
             />
 
-            <Route
-              path="/scale"
-              element={
-                <Protected>
-                  <Layout>
-                    <ScaleBenchmarksPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/capacity"
-              element={
-                <Protected>
-                  <Layout>
-                    <CapacityFinOpsPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/finops"
-              element={
-                <Protected>
-                  <Layout>
-                    <CapacityFinOpsPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/databases"
-              element={
-                <Protected>
-                  <Layout>
-                    <DatabasesPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/network"
-              element={
-                <Protected>
-                  <Layout>
-                    <NetworkPage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
+            {/* Redirects for redundant or mock routes */}
+            <Route path="/infrastructure" element={<Navigate to="/" replace />} />
+            <Route path="/agents" element={<Navigate to="/" replace />} />
+            <Route path="/traces" element={<Navigate to="/dashboards" replace />} />
+            <Route path="/service-map" element={<Navigate to="/" replace />} />
+            <Route path="/services" element={<Navigate to="/" replace />} />
+            <Route path="/containers" element={<Navigate to="/" replace />} />
+            <Route path="/kubernetes" element={<Navigate to="/" replace />} />
+            <Route path="/runbooks" element={<Navigate to="/" replace />} />
+            <Route path="/integrations" element={<Navigate to="/alerts" replace />} />
+            <Route path="/security" element={<Navigate to="/audit" replace />} />
+            <Route path="/organizations" element={<Navigate to="/" replace />} />
+            <Route path="/deployments" element={<Navigate to="/" replace />} />
+            <Route path="/changes" element={<Navigate to="/" replace />} />
+            <Route path="/scale" element={<Navigate to="/metrics" replace />} />
+            <Route path="/capacity" element={<Navigate to="/" replace />} />
+            <Route path="/finops" element={<Navigate to="/" replace />} />
+            <Route path="/databases" element={<Navigate to="/metrics" replace />} />
+            <Route path="/network" element={<Navigate to="/metrics" replace />} />
+            <Route path="/slos" element={<Navigate to="/incidents" replace />} />
+            <Route path="/compliance" element={<Navigate to="/audit" replace />} />
+            <Route path="/intelligence" element={<Navigate to="/dashboards" replace />} />
             <Route path="/billing" element={<Navigate to="/" replace />} />
             <Route path="/plans" element={<Navigate to="/" replace />} />
 
-            <Route
-              path="/compliance"
-              element={
-                <Protected>
-                  <Layout>
-                    <CompliancePage />
-                  </Layout>
-                </Protected>
-              }
-            />
-
-            <Route
-              path="/intelligence"
-              element={
-                <Protected>
-                  <Layout>
-                    <IntelligencePage />
-                  </Layout>
-                </Protected>
-              }
-            />
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </AuthProvider>
