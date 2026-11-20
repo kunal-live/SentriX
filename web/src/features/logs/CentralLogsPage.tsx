@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useCentralLogs, StructuredLogEntry } from '../../hooks/useCentralLogs';
+import { useServers } from '../../hooks/useDashboard';
 import {
   FileText,
   Search,
@@ -22,15 +23,19 @@ export function CentralLogsPage() {
   const [query, setQuery] = useState('');
   const [level, setLevel] = useState<string>('ALL');
   const [service, setService] = useState<string>('');
+  const [serverId, setServerId] = useState<string>('');
   const [liveTail, setLiveTail] = useState<boolean>(true);
   const [selectedLog, setSelectedLog] = useState<StructuredLogEntry | null>(null);
   const [copied, setCopied] = useState(false);
+
+  const { data: servers = [] } = useServers();
 
   const { data, isLoading } = useCentralLogs(
     {
       query,
       level,
       service,
+      server_id: serverId || undefined,
     },
     liveTail
   );
@@ -100,8 +105,8 @@ export function CentralLogsPage() {
           ))}
         </div>
 
-        {/* Search & Service Filter */}
-        <div className="flex items-center gap-3 w-full md:max-w-md">
+        {/* Search, Server, and Service Filter */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2.5 w-full md:max-w-xl">
           <div className="relative w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" size={14} />
             <input
@@ -114,16 +119,32 @@ export function CentralLogsPage() {
           </div>
 
           <select
+            value={serverId}
+            onChange={(e) => setServerId(e.target.value)}
+            className="bg-background border border-border focus:border-primary rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none shrink-0"
+          >
+            <option value="">All Servers</option>
+            {servers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name || s.hostname}
+              </option>
+            ))}
+          </select>
+
+          <select
             value={service}
             onChange={(e) => setService(e.target.value)}
-            className="bg-background border border-border focus:border-primary rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none"
+            className="bg-background border border-border focus:border-primary rounded-xl px-3 py-1.5 text-xs text-white font-mono focus:outline-none shrink-0"
           >
             <option value="">All Services</option>
+            <option value="sentrix-server">sentrix-server</option>
+            <option value="sentrix-agent">sentrix-agent</option>
+            <option value="timescale-db">timescale-db</option>
             <option value="telemetry-engine">telemetry-engine</option>
-            <option value="payments-service">payments-service</option>
             <option value="auth-gateway">auth-gateway</option>
-            <option value="edge-ingress">edge-ingress</option>
-            <option value="worker-runner">worker-runner</option>
+            <option value="node-monitor">node-monitor</option>
+            <option value="synthetic-checker">synthetic-checker</option>
+            <option value="systemd">systemd</option>
           </select>
         </div>
       </div>

@@ -8,6 +8,7 @@ bin/
 
 # Go
 server/sentrix-server
+server/sentrix-server*
 server/sentrix-server.exe
 *.test
 

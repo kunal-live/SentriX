@@ -1313,6 +1313,7 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 
 		// Centralized Logs
 		r.Get("/logs", logs.HandleSearchLogs(nil))
+		r.Get("/logs/services", logs.HandleGetServices(nil))
 		r.Post("/logs/batch", logs.HandleBatchLogs(nil))
 
 		// Distributed Tracing & OpenTelemetry

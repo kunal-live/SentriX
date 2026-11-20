@@ -5,12 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/logs"
 	"github.com/sentrix/server/internal/realtime"
 	"github.com/sentrix/server/internal/selfmetrics"
 )
@@ -236,6 +238,25 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		selfmetrics.Global().IngestSamples.Add(int64(len(payload.Metrics)))
+
+		// Record live telemetry ingestion in system_logs periodically (every 3 sequences or initial sequences)
+		if payload.Sequence%3 == 0 || payload.Sequence <= 2 {
+			go func(sid string, seq int64, count int, ts time.Time) {
+				var srvName string
+				_ = pool.QueryRow(context.Background(), "SELECT COALESCE(name, hostname) FROM servers WHERE id = $1", sid).Scan(&srvName)
+				if srvName == "" {
+					srvName = "node-" + sid[:8]
+				}
+				logs.RecordLog(context.Background(), pool, logs.StructuredLogEntry{
+					Timestamp: ts,
+					Level:     "INFO",
+					Service:   "telemetry-engine",
+					Server:    srvName,
+					ServerID:  sid,
+					Message:   fmt.Sprintf("Ingested %d metric datapoints (sequence %d) from %s into TimescaleDB.", count, seq, srvName),
+				})
+			}(serverID, payload.Sequence, len(payload.Metrics), now)
+		}
 
 		realtime.PublishServerUpdated(serverID)
 		realtime.PublishServerTelemetry(serverID)

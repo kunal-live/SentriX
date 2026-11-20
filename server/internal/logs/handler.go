@@ -1,7 +1,9 @@
 package logs
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,84 +37,65 @@ var (
 	logBuffer  []StructuredLogEntry
 )
 
-func init() {
-	now := time.Now().UTC()
-	logBuffer = []StructuredLogEntry{
-		{
-			ID:        "log-001",
-			Timestamp: now.Add(-2 * time.Minute),
-			Level:     "ERROR",
-			Service:   "telemetry-engine",
-			Server:    "timescale-db-cluster-01",
-			ServerID:  "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
-			Message:   "PostgreSQL connection buffer exceeded maximum pool allocation: 96% utilization",
-			TraceID:   "trc_9a8b7c6d5e4f",
-			RequestID: "req_bf1082a9381c",
-		},
-		{
-			ID:        "log-002",
-			Timestamp: now.Add(-5 * time.Minute),
-			Level:     "WARN",
-			Service:   "payments-service",
-			Server:    "production-api-01",
-			ServerID:  "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
-			Message:   "Payment webhook delivery retry 2 of 3 to stripe endpoint; latency 840ms",
-			TraceID:   "trc_1e2d3c4b5a6f",
-			RequestID: "req_4901238910ac",
-		},
-		{
-			ID:        "log-003",
-			Timestamp: now.Add(-10 * time.Minute),
-			Level:     "INFO",
-			Service:   "auth-gateway",
-			Server:    "production-api-01",
-			ServerID:  "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
-			Message:   "OIDC authorization exchange completed successfully for admin@sentrix.local",
-			TraceID:   "trc_5b4c3d2e1a90",
-			RequestID: "req_aa129034ef81",
-		},
-		{
-			ID:        "log-004",
-			Timestamp: now.Add(-15 * time.Minute),
-			Level:     "ERROR",
-			Service:   "edge-ingress",
-			Server:    "edge-ingress-proxy-02",
-			ServerID:  "d4e5f6a7-b8c9-4d0e-1f2a-3b4c5d6e7f8a",
-			Message:   "SSL handshake timeout from peer 198.51.100.44: TLS protocol alert decode error",
-			TraceID:   "trc_8899aabbccdd",
-			RequestID: "req_fe3300112299",
-		},
-		{
-			ID:        "log-005",
-			Timestamp: now.Add(-20 * time.Minute),
-			Level:     "INFO",
-			Service:   "worker-runner",
-			Server:    "worker-queue-runner-01",
-			ServerID:  "c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f",
-			Message:   "Telemetry rollup downsampling job completed in 142ms; 12,400 raw samples processed",
-			TraceID:   "trc_776655443322",
-			RequestID: "req_881122334455",
-		},
-		{
-			ID:        "log-006",
-			Timestamp: now.Add(-25 * time.Minute),
-			Level:     "WARN",
-			Service:   "telemetry-engine",
-			Server:    "timescale-db-cluster-01",
-			ServerID:  "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e",
-			Message:   "Hypertable chunk compression delayed due to high disk IOps latency (18.4ms)",
-			TraceID:   "trc_334455667788",
-			RequestID: "req_998877665544",
-		},
+// RecordLog records a structured log entry into TimescaleDB/PostgreSQL system_logs table
+// and preserves the latest entries in memory for instant retrieval.
+func RecordLog(ctx context.Context, pool *pgxpool.Pool, entry StructuredLogEntry) {
+	if entry.ID == "" {
+		entry.ID = uuid.New().String()
+	}
+	if entry.Timestamp.IsZero() {
+		entry.Timestamp = time.Now().UTC()
+	}
+	if entry.Level == "" {
+		entry.Level = "INFO"
+	}
+	if entry.Service == "" {
+		entry.Service = "sentrix-server"
+	}
+	if entry.Server == "" {
+		entry.Server = "sentrix-core"
+	}
+
+	// Update memory ring buffer
+	logStoreMu.Lock()
+	logBuffer = append([]StructuredLogEntry{entry}, logBuffer...)
+	if len(logBuffer) > 2000 {
+		logBuffer = logBuffer[:2000]
+	}
+	logStoreMu.Unlock()
+
+	// Persist to database if pool is live
+	if pool != nil {
+		var serverIDParam any
+		if entry.ServerID != "" {
+			if _, err := uuid.Parse(entry.ServerID); err == nil {
+				serverIDParam = entry.ServerID
+			}
+		}
+
+		var traceParam any
+		if entry.TraceID != "" {
+			traceParam = entry.TraceID
+		}
+
+		var reqParam any
+		if entry.RequestID != "" {
+			reqParam = entry.RequestID
+		}
+
+		_, _ = pool.Exec(ctx, `
+			INSERT INTO system_logs (id, timestamp, level, service, server, server_id, message, trace_id, request_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, entry.ID, entry.Timestamp, entry.Level, entry.Service, entry.Server, serverIDParam, entry.Message, traceParam, reqParam)
 	}
 }
 
 // GET /api/v1/logs
 func HandleSearchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("query")))
+		query := strings.TrimSpace(r.URL.Query().Get("query"))
 		level := strings.ToUpper(strings.TrimSpace(r.URL.Query().Get("level")))
-		service := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("service")))
+		service := strings.TrimSpace(r.URL.Query().Get("service"))
 		serverID := strings.TrimSpace(r.URL.Query().Get("server_id"))
 		traceID := strings.TrimSpace(r.URL.Query().Get("trace_id"))
 		limitParam := r.URL.Query().Get("limit")
@@ -124,6 +107,93 @@ func HandleSearchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 		}
 
+		// When PostgreSQL pool is available, query real persistent system logs
+		if pool != nil {
+			ctx := r.Context()
+			var whereClauses []string
+			var args []any
+			argIdx := 1
+
+			if level != "" && level != "ALL" {
+				whereClauses = append(whereClauses, fmt.Sprintf("level = $%d", argIdx))
+				args = append(args, level)
+				argIdx++
+			}
+
+			if service != "" {
+				whereClauses = append(whereClauses, fmt.Sprintf("service ILIKE $%d", argIdx))
+				args = append(args, "%"+service+"%")
+				argIdx++
+			}
+
+			if serverID != "" {
+				if _, err := uuid.Parse(serverID); err == nil {
+					whereClauses = append(whereClauses, fmt.Sprintf("server_id = $%d", argIdx))
+					args = append(args, serverID)
+					argIdx++
+				}
+			}
+
+			if traceID != "" {
+				whereClauses = append(whereClauses, fmt.Sprintf("trace_id = $%d", argIdx))
+				args = append(args, traceID)
+				argIdx++
+			}
+
+			if query != "" {
+				whereClauses = append(whereClauses, fmt.Sprintf("(message ILIKE $%d OR service ILIKE $%d OR server ILIKE $%d)", argIdx, argIdx, argIdx))
+				args = append(args, "%"+query+"%")
+				argIdx++
+			}
+
+			whereSQL := ""
+			if len(whereClauses) > 0 {
+				whereSQL = "WHERE " + strings.Join(whereClauses, " AND ")
+			}
+
+			sql := fmt.Sprintf(`
+				SELECT id::text, timestamp, level, service, server, COALESCE(server_id::text, ''), message, COALESCE(trace_id, ''), COALESCE(request_id, '')
+				FROM system_logs
+				%s
+				ORDER BY timestamp DESC
+				LIMIT $%d
+			`, whereSQL, argIdx)
+			args = append(args, limit)
+
+			rows, err := pool.Query(ctx, sql, args...)
+			if err == nil {
+				defer rows.Close()
+				var results []StructuredLogEntry
+				for rows.Next() {
+					var item StructuredLogEntry
+					if scanErr := rows.Scan(
+						&item.ID,
+						&item.Timestamp,
+						&item.Level,
+						&item.Service,
+						&item.Server,
+						&item.ServerID,
+						&item.Message,
+						&item.TraceID,
+						&item.RequestID,
+					); scanErr == nil {
+						results = append(results, item)
+					}
+				}
+
+				if results == nil {
+					results = []StructuredLogEntry{}
+				}
+
+				api.RespondJSON(w, http.StatusOK, map[string]any{
+					"total": len(results),
+					"logs":  results,
+				})
+				return
+			}
+		}
+
+		// Fallback to in-memory buffer if database is unavailable or query errored
 		logStoreMu.RLock()
 		defer logStoreMu.RUnlock()
 
@@ -132,7 +202,7 @@ func HandleSearchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 			if level != "" && level != "ALL" && item.Level != level {
 				continue
 			}
-			if service != "" && !strings.Contains(strings.ToLower(item.Service), service) {
+			if service != "" && !strings.Contains(strings.ToLower(item.Service), strings.ToLower(service)) {
 				continue
 			}
 			if serverID != "" && item.ServerID != serverID {
@@ -142,9 +212,10 @@ func HandleSearchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 				continue
 			}
 			if query != "" {
-				inMsg := strings.Contains(strings.ToLower(item.Message), query)
-				inSvc := strings.Contains(strings.ToLower(item.Service), query)
-				inSrv := strings.Contains(strings.ToLower(item.Server), query)
+				q := strings.ToLower(query)
+				inMsg := strings.Contains(strings.ToLower(item.Message), q)
+				inSvc := strings.Contains(strings.ToLower(item.Service), q)
+				inSrv := strings.Contains(strings.ToLower(item.Server), q)
 				if !inMsg && !inSvc && !inSrv {
 					continue
 				}
@@ -163,6 +234,46 @@ func HandleSearchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
+// GET /api/v1/logs/services
+func HandleGetServices(pool *pgxpool.Pool) http.HandlerFunc {
+	defaultServices := []string{
+		"sentrix-server",
+		"sentrix-agent",
+		"timescale-db",
+		"telemetry-engine",
+		"auth-gateway",
+		"node-monitor",
+		"synthetic-checker",
+		"systemd",
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if pool != nil {
+			rows, err := pool.Query(r.Context(), `
+				SELECT DISTINCT service
+				FROM system_logs
+				ORDER BY service ASC
+			`)
+			if err == nil {
+				defer rows.Close()
+				var services []string
+				for rows.Next() {
+					var s string
+					if err := rows.Scan(&s); err == nil && s != "" {
+						services = append(services, s)
+					}
+				}
+				if len(services) > 0 {
+					api.RespondJSON(w, http.StatusOK, services)
+					return
+				}
+			}
+		}
+
+		api.RespondJSON(w, http.StatusOK, defaultServices)
+	}
+}
+
 // POST /api/v1/logs/batch
 func HandleBatchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -177,11 +288,11 @@ func HandleBatchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		ctx := r.Context()
 		now := time.Now().UTC()
-		processed := make([]StructuredLogEntry, len(req.Logs))
-		for i, entry := range req.Logs {
+		for _, entry := range req.Logs {
 			if entry.ID == "" {
-				entry.ID = "log-" + uuid.New().String()[:8]
+				entry.ID = uuid.New().String()
 			}
 			if entry.Timestamp.IsZero() {
 				entry.Timestamp = now
@@ -189,15 +300,8 @@ func HandleBatchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 			if entry.ServerID == "" {
 				entry.ServerID = req.ServerID
 			}
-			processed[i] = entry
+			RecordLog(ctx, pool, entry)
 		}
-
-		logStoreMu.Lock()
-		logBuffer = append(processed, logBuffer...)
-		if len(logBuffer) > 2000 {
-			logBuffer = logBuffer[:2000]
-		}
-		logStoreMu.Unlock()
 
 		api.RespondJSON(w, http.StatusAccepted, map[string]any{
 			"status":   "accepted",

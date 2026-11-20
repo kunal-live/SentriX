@@ -3,11 +3,13 @@ package checks
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/logs"
 )
 
 type agentCheck struct {
@@ -183,6 +185,25 @@ func HandleAgentCheckResults(pool *pgxpool.Pool) http.HandlerFunc {
 				result.LatencyMs,
 				result.Message,
 			)
+
+			go func(sid, cid, st, msg string, lat int) {
+				var srvName string
+				_ = pool.QueryRow(context.Background(), "SELECT COALESCE(name, hostname) FROM servers WHERE id = $1", sid).Scan(&srvName)
+				if srvName == "" {
+					srvName = "node-" + sid[:8]
+				}
+				lvl := "INFO"
+				if st != "OK" {
+					lvl = "WARN"
+				}
+				logs.RecordLog(context.Background(), pool, logs.StructuredLogEntry{
+					Level:    lvl,
+					Service:  "synthetic-checker",
+					Server:   srvName,
+					ServerID: sid,
+					Message:  fmt.Sprintf("Health check result: %s (%dms latency) - %s", st, lat, msg),
+				})
+			}(serverID, result.CheckID, status, result.Message, result.LatencyMs)
 		}
 
 		w.WriteHeader(http.StatusAccepted)

@@ -106,6 +106,8 @@ func main() {
 				if err := auth.BootstrapAdmin(ctx, pool); err != nil {
 					slog.Warn("Failed to bootstrap admin user", "error", err)
 				}
+
+				logs.StartLiveCollectors(context.Background(), pool)
 			} else {
 				p.Close()
 			}
@@ -192,6 +194,8 @@ func main() {
 				r.Post("/agent/telemetry", metrics.HandleTelemetry(pool))
 				r.Post("/telemetry", metrics.HandleBatchTelemetry(pool))
 				r.Post("/telemetry/batch", metrics.HandleBatchTelemetry(pool))
+				r.Get("/agent/checks", checks.HandleAgentChecks(pool))
+				r.Post("/agent/check-results", checks.HandleAgentCheckResults(pool))
 			})
 
 			// Authenticated user routes
@@ -217,6 +221,7 @@ func main() {
 
 				// Centralized Structured Logs
 				r.Get("/logs", logs.HandleSearchLogs(pool))
+				r.Get("/logs/services", logs.HandleGetServices(pool))
 				r.Post("/logs/batch", logs.HandleBatchLogs(pool))
 
 				// Distributed Tracing & OpenTelemetry

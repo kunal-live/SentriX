@@ -59,7 +59,7 @@ func init() {
 			{
 				ID:      "w-02",
 				Type:    "METRIC_GAUGE",
-				Title:   "Database Pool Allocation",
+				Title:   "Host Memory Saturation",
 				Metric:  "system.memory.utilization",
 				ColSpan: 1,
 			},
