@@ -198,6 +198,7 @@ func main() {
 				r.Get("/dashboard/summary", health.HandleDashboardSummary(pool))
 				r.Get("/servers", servers.HandleListServers(pool))
 				r.Get("/servers/{serverID}/metrics", metrics.HandleServerMetrics(pool))
+				r.Get("/metrics/query", metrics.HandleQueryMetrics(pool))
 				r.Get("/incidents", incidents.HandleListIncidents(pool))
 				r.Get("/alerts/rules", alerts.HandleListRules(pool))
 				r.Post("/alerts/simulate", alerts.HandleSimulateRule(pool))

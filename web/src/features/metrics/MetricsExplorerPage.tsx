@@ -11,6 +11,7 @@ import {
   Legend,
 } from 'recharts';
 import { fetchJSON } from '../../lib/api';
+import { Server as ServerType } from '../../hooks/useDashboard';
 import {
   Activity,
   Cpu,
@@ -67,10 +68,43 @@ export function MetricsExplorerPage() {
 
   const { data: queryData, isLoading, refetch, isFetching } = useQuery<MetricsQueryResponse>({
     queryKey: ['metrics-query', selectedMetric, selectedRange],
-    queryFn: () =>
-      fetchJSON<MetricsQueryResponse>(
-        `/metrics/query?metric=${selectedMetric}&range=${selectedRange}`
-      ),
+    queryFn: async () => {
+      try {
+        return await fetchJSON<MetricsQueryResponse>(
+          `/metrics/query?metric=${selectedMetric}&range=${selectedRange}`
+        );
+      } catch {
+        // Resilient fallback: build series from individual server metric history
+        const servers = await fetchJSON<ServerType[]>('/servers');
+        const series = await Promise.all(
+          (servers || []).map(async (s) => {
+            try {
+              const res = await fetchJSON<{ points: MetricPoint[] }>(
+                `/servers/${s.id}/metrics?metric=${selectedMetric}&range=${selectedRange}`
+              );
+              return {
+                server_id: s.id,
+                server_name: s.name || s.hostname,
+                status: s.status,
+                points: res?.points || [],
+              };
+            } catch {
+              return {
+                server_id: s.id,
+                server_name: s.name || s.hostname,
+                status: s.status,
+                points: [],
+              };
+            }
+          })
+        );
+        return {
+          metric: selectedMetric,
+          range: selectedRange,
+          series,
+        };
+      }
+    },
     refetchInterval: 10000,
   });
 
@@ -183,8 +217,10 @@ export function MetricsExplorerPage() {
               <span>Fetching fleet metrics telemetry...</span>
             </div>
           ) : chartData.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-muted text-xs font-mono">
-              No points available for the selected range.
+            <div className="h-full flex flex-col items-center justify-center text-muted text-xs font-mono py-12 space-y-2">
+              <Server size={28} className="text-muted/60" />
+              <span>No historical {activeMetricObj.label} data points in the selected {selectedRange} window.</span>
+              <span className="text-[11px] text-muted/70">Metrics from your connected servers will appear here automatically.</span>
             </div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">

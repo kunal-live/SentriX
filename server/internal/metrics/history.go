@@ -132,3 +132,125 @@ func HandleServerMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 		json.NewEncoder(w).Encode(resp)
 	}
 }
+
+type ServerSeriesItem struct {
+	ServerID   string        `json:"server_id"`
+	ServerName string        `json:"server_name"`
+	Status     string        `json:"status"`
+	Points     []MetricPoint `json:"points"`
+}
+
+type MetricsQueryMultiResponse struct {
+	Metric string             `json:"metric"`
+	Range  string             `json:"range"`
+	Series []ServerSeriesItem `json:"series"`
+}
+
+// GET /api/v1/metrics/query?metric=cpu&range=1h
+func HandleQueryMetrics(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		metric := r.URL.Query().Get("metric")
+		if metric == "" {
+			metric = "cpu"
+		}
+
+		timeRange := r.URL.Query().Get("range")
+		if timeRange == "" {
+			timeRange = "1h"
+		}
+
+		table, ok := metricTables[metric]
+		if !ok {
+			table = "metric_cpu"
+			metric = "cpu"
+		}
+
+		interval, ok := rangeIntervals[timeRange]
+		if !ok {
+			interval = "1 hour"
+			timeRange = "1h"
+		}
+
+		step, ok := stepIntervals[timeRange]
+		if !ok {
+			step = "1 minute"
+		}
+
+		ctx := r.Context()
+
+		rows, err := pool.Query(ctx, `
+			SELECT id, name, hostname, status, last_seen_at
+			FROM servers
+			ORDER BY name ASC
+		`)
+		if err != nil {
+			http.Error(w, "database query failed", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		type srv struct {
+			id       string
+			name     string
+			hostname string
+			status   string
+			lastSeen *time.Time
+		}
+		var serverList []srv
+		for rows.Next() {
+			var s srv
+			if err := rows.Scan(&s.id, &s.name, &s.hostname, &s.status, &s.lastSeen); err == nil {
+				serverList = append(serverList, s)
+			}
+		}
+
+		seriesList := make([]ServerSeriesItem, 0, len(serverList))
+
+		for _, s := range serverList {
+			query := fmt.Sprintf(`
+				SELECT
+					time_bucket($3::interval, time) AS bucket,
+					COALESCE(AVG(value), 0) AS value
+				FROM %s
+				WHERE server_id = $1
+				  AND time > now() - $2::interval
+				GROUP BY bucket
+				ORDER BY bucket ASC
+			`, table)
+
+			mRows, err := pool.Query(ctx, query, s.id, interval, step)
+			points := []MetricPoint{}
+			if err == nil {
+				for mRows.Next() {
+					var pt MetricPoint
+					if err := mRows.Scan(&pt.Time, &pt.Value); err == nil {
+						pt.Value = float64(int(pt.Value*10)) / 10.0
+						points = append(points, pt)
+					}
+				}
+				mRows.Close()
+			}
+
+			dispName := s.name
+			if dispName == "" {
+				dispName = s.hostname
+			}
+
+			seriesList = append(seriesList, ServerSeriesItem{
+				ServerID:   s.id,
+				ServerName: dispName,
+				Status:     s.status,
+				Points:     points,
+			})
+		}
+
+		resp := MetricsQueryMultiResponse{
+			Metric: metric,
+			Range:  timeRange,
+			Series: seriesList,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}
+}
