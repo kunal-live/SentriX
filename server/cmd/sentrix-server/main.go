@@ -239,10 +239,14 @@ func main() {
 				r.Get("/slos", slo.HandleListSLOs(pool))
 				r.Post("/slos", slo.HandleCreateSLO(pool))
 
-				// Custom Dashboards
+				// Custom Dashboards & Widgets
 				r.Get("/dashboards", dashboards.HandleListDashboards(pool))
 				r.Get("/dashboards/{id}", dashboards.HandleGetDashboard(pool))
 				r.Post("/dashboards", dashboards.HandleCreateDashboard(pool))
+				r.Put("/dashboards/{id}", dashboards.HandleUpdateDashboard(pool))
+				r.Delete("/dashboards/{id}", dashboards.HandleDeleteDashboard(pool))
+				r.Post("/dashboards/{id}/widgets", dashboards.HandleAddWidget(pool))
+				r.Delete("/dashboards/{id}/widgets/{widgetId}", dashboards.HandleDeleteWidget(pool))
 
 				// Incident lifecycle & operational actions
 				r.Post("/incidents", incidents.HandleCreateIncident(pool))

@@ -1,5 +1,12 @@
 import { FormEvent, useState } from 'react';
-import { useDashboards, useCreateDashboard, Dashboard, DashboardWidget } from '../../hooks/useDashboards';
+import {
+  useDashboards,
+  useCreateDashboard,
+  useAddWidget,
+  useDeleteWidget,
+  useDeleteDashboard,
+  DashboardWidget,
+} from '../../hooks/useDashboards';
 import { useServers } from '../../hooks/useDashboard';
 import { useServerMetrics } from '../../hooks/useMetrics';
 import { useCentralLogs } from '../../hooks/useCentralLogs';
@@ -11,12 +18,8 @@ import {
   AlertTriangle,
   FileText,
   Clock,
-  Sparkles,
-  Layers,
-  BarChart2,
   Trash2,
   TrendingUp,
-  Sliders,
   CheckCircle2,
   Server as ServerIcon,
 } from 'lucide-react';
@@ -33,6 +36,7 @@ import {
 export function DashboardsPage() {
   const { data: dashboards, isLoading } = useDashboards();
   const createDashboard = useCreateDashboard();
+  const deleteDashboard = useDeleteDashboard();
 
   const { data: servers = [] } = useServers();
   const [selectedServerId, setSelectedServerId] = useState<string>('');
@@ -61,39 +65,84 @@ export function DashboardsPage() {
     (dashboards || []).find((d) => d.id === activeDashboardId) ||
     (dashboards && dashboards[0]);
 
+  const addWidgetMutation = useAddWidget(activeDashboard?.id);
+  const deleteWidgetMutation = useDeleteWidget(activeDashboard?.id);
+
   async function handleCreateDashboard(e: FormEvent) {
     e.preventDefault();
-    await createDashboard.mutateAsync({
-      title: dashTitle,
-      description: dashDescription,
-      is_default: false,
-      widgets: [
-        {
-          id: 'w-' + Date.now(),
-          type: 'METRIC_LINE',
-          title: 'Fleet CPU Saturation',
-          metric: 'system.cpu.utilization',
-          col_span: 2,
-        },
-      ],
-    });
-    setDashTitle('');
-    setDashDescription('');
-    setShowCreateModal(false);
+    if (!dashTitle.trim()) return;
+
+    try {
+      const created = await createDashboard.mutateAsync({
+        title: dashTitle.trim(),
+        description: dashDescription.trim(),
+        is_default: false,
+        widgets: [
+          {
+            id: 'w-' + Date.now(),
+            type: 'METRIC_LINE',
+            title: 'Fleet CPU Saturation',
+            metric: 'system.cpu.utilization',
+            col_span: 2,
+          },
+          {
+            id: 'w-' + (Date.now() + 1),
+            type: 'METRIC_GAUGE',
+            title: 'Host Memory Saturation',
+            metric: 'system.memory.utilization',
+            col_span: 1,
+          },
+        ],
+      });
+      if (created?.id) {
+        setActiveDashboardId(created.id);
+      }
+      setDashTitle('');
+      setDashDescription('');
+      setShowCreateModal(false);
+    } catch (err) {
+      console.error('Failed to create dashboard', err);
+    }
   }
 
-  function handleAddWidget(e: FormEvent) {
+  async function handleAddWidget(e: FormEvent) {
     e.preventDefault();
     if (!activeDashboard) return;
-    activeDashboard.widgets.push({
-      id: 'w-' + Date.now(),
-      type: widgetType,
-      title: widgetTitle || 'Custom Widget',
-      metric: widgetMetric,
-      col_span: widgetColSpan,
-    });
-    setWidgetTitle('');
-    setShowAddWidgetModal(false);
+
+    try {
+      await addWidgetMutation.mutateAsync({
+        id: 'w-' + Date.now(),
+        type: widgetType,
+        title: widgetTitle.trim() || 'Custom Widget',
+        metric: widgetMetric,
+        col_span: widgetColSpan,
+      });
+      setWidgetTitle('');
+      setShowAddWidgetModal(false);
+    } catch (err) {
+      console.error('Failed to add widget', err);
+    }
+  }
+
+  async function handleDeleteWidget(widgetId: string) {
+    if (!activeDashboard) return;
+    try {
+      await deleteWidgetMutation.mutateAsync(widgetId);
+    } catch (err) {
+      console.error('Failed to delete widget', err);
+    }
+  }
+
+  async function handleDeleteDashboard() {
+    if (!activeDashboard || activeDashboard.is_default) return;
+    if (!window.confirm(`Are you sure you want to delete dashboard "${activeDashboard.title}"?`)) return;
+
+    try {
+      await deleteDashboard.mutateAsync(activeDashboard.id);
+      setActiveDashboardId('dash-primary');
+    } catch (err) {
+      console.error('Failed to delete dashboard', err);
+    }
   }
 
   return (
@@ -141,6 +190,18 @@ export function DashboardsPage() {
               </option>
             ))}
           </select>
+
+          {activeDashboard && !activeDashboard.is_default && (
+            <button
+              onClick={handleDeleteDashboard}
+              disabled={deleteDashboard.isPending}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-surface hover:bg-critical/20 text-muted hover:text-critical border border-border hover:border-critical/30 text-xs font-semibold transition-colors"
+              title="Delete this custom dashboard"
+            >
+              <Trash2 size={13} />
+              <span>Delete</span>
+            </button>
+          )}
 
           <button
             onClick={() => setShowAddWidgetModal(true)}
@@ -201,7 +262,18 @@ export function DashboardsPage() {
                     {widget.type === 'ALERT_LIST' && <AlertTriangle size={14} className="text-critical" />}
                     <span>{widget.title}</span>
                   </div>
-                  <span className="text-[10px] font-mono text-muted uppercase">{widget.type}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono text-muted uppercase">{widget.type}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteWidget(widget.id)}
+                      disabled={deleteWidgetMutation.isPending}
+                      title="Remove this widget"
+                      className="p-1 rounded text-muted hover:text-critical hover:bg-critical/10 transition-colors"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Widget Body Content */}
@@ -392,7 +464,7 @@ export function DashboardsPage() {
                   disabled={createDashboard.isPending}
                   className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-semibold shadow-glow-primary"
                 >
-                  Create Dashboard
+                  {createDashboard.isPending ? 'Creating...' : 'Create Dashboard'}
                 </button>
               </div>
             </form>
@@ -474,9 +546,10 @@ export function DashboardsPage() {
                 </button>
                 <button
                   type="submit"
+                  disabled={addWidgetMutation.isPending}
                   className="px-4 py-2 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-semibold shadow-glow-primary"
                 >
-                  Add to Dashboard
+                  {addWidgetMutation.isPending ? 'Adding...' : 'Add to Dashboard'}
                 </button>
               </div>
             </form>

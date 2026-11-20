@@ -39,3 +39,43 @@ export function useCreateDashboard() {
     },
   });
 }
+
+export function useAddWidget(dashboardId?: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (widget: DashboardWidget) => {
+      if (!dashboardId) throw new Error('No dashboard selected');
+      return mutateJSON<Dashboard>(`/dashboards/${dashboardId}/widgets`, 'POST', widget);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+    },
+  });
+}
+
+export function useDeleteWidget(dashboardId?: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (widgetId: string) => {
+      if (!dashboardId) throw new Error('No dashboard selected');
+      return mutateJSON<Dashboard>(`/dashboards/${dashboardId}/widgets/${widgetId}`, 'DELETE');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+    },
+  });
+}
+
+export function useDeleteDashboard() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (dashboardId: string) =>
+      mutateJSON(`/dashboards/${dashboardId}`, 'DELETE'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboards'] });
+    },
+  });
+}

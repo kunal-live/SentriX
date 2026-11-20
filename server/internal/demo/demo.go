@@ -1331,10 +1331,14 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		r.Get("/slos", slo.HandleListSLOs(nil))
 		r.Post("/slos", slo.HandleCreateSLO(nil))
 
-		// Custom Dashboards
+		// Custom Dashboards & Widgets
 		r.Get("/dashboards", dashboards.HandleListDashboards(nil))
 		r.Get("/dashboards/{id}", dashboards.HandleGetDashboard(nil))
 		r.Post("/dashboards", dashboards.HandleCreateDashboard(nil))
+		r.Put("/dashboards/{id}", dashboards.HandleUpdateDashboard(nil))
+		r.Delete("/dashboards/{id}", dashboards.HandleDeleteDashboard(nil))
+		r.Post("/dashboards/{id}/widgets", dashboards.HandleAddWidget(nil))
+		r.Delete("/dashboards/{id}/widgets/{widgetId}", dashboards.HandleDeleteWidget(nil))
 
 		r.Get("/alerts/rules", func(w http.ResponseWriter, r *http.Request) {
 			store.mu.RLock()
