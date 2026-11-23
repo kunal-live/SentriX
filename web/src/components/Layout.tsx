@@ -2,21 +2,39 @@ import { ReactNode, useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
+  Grid,
+  Activity,
+  FileText,
+  GitCommit,
+  Network,
+  Layers,
+  Cpu,
+  Boxes,
+  Box,
+  Radio,
   AlertTriangle,
   BellRing,
-  Activity,
+  CheckCircle2,
+  Target,
+  Terminal,
+  Rocket,
+  Sparkles,
+  Database,
+  Globe,
+  TrendingUp,
+  Zap,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Users,
+  Building2,
+  Plug,
+  Bell,
+  Code,
   LogOut,
-  Radio,
   Search,
   ChevronRight,
   ChevronDown,
-  Shield,
-  Layers,
-  CheckCircle2,
-  Users,
-  ShieldCheck,
-  FileText,
-  Code,
 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { useRealtime } from '../hooks/useRealtime';
@@ -42,27 +60,59 @@ export const navSections: NavSection[] = [
     title: 'Observability',
     items: [
       { path: '/', label: 'Fleet Overview', icon: LayoutDashboard },
-      { path: '/dashboards', label: 'Custom Dashboards', icon: LayoutDashboard },
+      { path: '/dashboards', label: 'Custom Dashboards', icon: Grid },
       { path: '/metrics', label: 'Metrics Explorer', icon: Activity },
       { path: '/logs', label: 'Central Logs', icon: FileText },
+      { path: '/traces', label: 'Distributed Tracing', icon: GitCommit },
+      { path: '/service-map', label: 'Service Map & Mesh', icon: Network },
+      { path: '/services', label: 'Services Catalog', icon: Layers },
+      { path: '/infrastructure', label: 'Host Topology', icon: Cpu },
+    ],
+  },
+  {
+    id: 'workloads',
+    title: 'Cloud & Workloads',
+    items: [
+      { path: '/kubernetes', label: 'Kubernetes Clusters', icon: Boxes },
+      { path: '/containers', label: 'Docker Containers', icon: Box },
+      { path: '/agents', label: 'Agent Fleet v2', icon: Radio },
     ],
   },
   {
     id: 'reliability',
-    title: 'Reliability & Alerts',
+    title: 'Reliability & Ops',
     items: [
       { path: '/incidents', label: 'Incidents', icon: AlertTriangle, badge: 'incidents' },
       { path: '/alerts', label: 'Alert Rules', icon: BellRing },
-      { path: '/checks', label: 'Health Checks', icon: Activity },
+      { path: '/checks', label: 'Health Checks', icon: CheckCircle2 },
+      { path: '/slos', label: 'SLOs & Error Budgets', icon: Target },
+      { path: '/runbooks', label: 'Runbook Automation', icon: Terminal },
+      { path: '/deployments', label: 'Deployments & Changes', icon: Rocket },
+    ],
+  },
+  {
+    id: 'diagnostics',
+    title: 'Diagnostics & AI',
+    items: [
+      { path: '/intelligence', label: 'AI RCA & Evidence Graph', icon: Sparkles },
+      { path: '/databases', label: 'Database Health', icon: Database },
+      { path: '/network', label: 'Network Diagnostics', icon: Globe },
+      { path: '/capacity', label: 'Capacity & FinOps', icon: TrendingUp },
+      { path: '/scale', label: 'Scale Benchmarks', icon: Zap },
     ],
   },
   {
     id: 'platform',
     title: 'Platform & Security',
     items: [
-      { path: '/users', label: 'Team & Access', icon: Users },
-      { path: '/api-keys', label: 'Developer Platform', icon: Code },
+      { path: '/security', label: 'Security Center', icon: Shield },
+      { path: '/compliance', label: 'Compliance & DR', icon: ShieldAlert },
       { path: '/audit', label: 'Audit Logs', icon: ShieldCheck },
+      { path: '/users', label: 'Team & RBAC', icon: Users },
+      { path: '/organizations', label: 'Multi-Tenancy', icon: Building2 },
+      { path: '/integrations', label: 'Integrations Hub', icon: Plug },
+      { path: '/notifications', label: 'Notification Channels', icon: Bell },
+      { path: '/api-keys', label: 'Developer Platform', icon: Code },
     ],
   },
 ];
@@ -114,7 +164,7 @@ export function Layout({ children }: { children: ReactNode }) {
 
   if (isSummaryError) {
     statusBadge = {
-      to: '/overview',
+      to: '/',
       bgColor: 'bg-critical/15 hover:bg-critical/25 border-critical/40 text-critical',
       icon: AlertTriangle,
       iconColor: 'text-critical',
@@ -124,7 +174,7 @@ export function Layout({ children }: { children: ReactNode }) {
     };
   } else if (isSummaryLoading && !summary) {
     statusBadge = {
-      to: '/overview',
+      to: '/',
       bgColor: 'bg-surface/80 hover:bg-surface border-border text-muted',
       icon: Activity,
       iconColor: 'text-muted animate-spin',
@@ -146,7 +196,7 @@ export function Layout({ children }: { children: ReactNode }) {
     };
   } else if (offlineNodes > 0) {
     statusBadge = {
-      to: '/overview',
+      to: '/',
       bgColor: 'bg-critical/15 hover:bg-critical/25 border-critical/40 text-critical',
       icon: AlertTriangle,
       iconColor: 'text-critical',
@@ -156,7 +206,7 @@ export function Layout({ children }: { children: ReactNode }) {
     };
   } else if (suspectNodes > 0) {
     statusBadge = {
-      to: '/overview',
+      to: '/',
       bgColor: 'bg-warning/15 hover:bg-warning/25 border-warning/40 text-warning',
       icon: AlertTriangle,
       iconColor: 'text-warning',
@@ -207,12 +257,15 @@ export function Layout({ children }: { children: ReactNode }) {
         {/* Hierarchical Navigation Sections */}
         <div className="px-3 py-3 flex-1 space-y-4 overflow-y-auto">
           {navSections.map((section) => {
-            const isCollapsed = !!collapsedSections[section.id];
             const hasActiveChild = section.items.some((item) =>
               item.path === '/'
                 ? location.pathname === '/' || location.pathname.startsWith('/servers')
                 : location.pathname.startsWith(item.path)
             );
+            // Keep section open if user explicitly toggled it open, or if it has an active child
+            const isExplicitlyToggled = collapsedSections[section.id] !== undefined;
+            const isCollapsed = isExplicitlyToggled ? collapsedSections[section.id] : false;
+
             const sectionIncidentCount = section.items.some((i) => i.badge === 'incidents')
               ? openIncidents
               : 0;
@@ -228,8 +281,9 @@ export function Layout({ children }: { children: ReactNode }) {
                   <span className="flex items-center gap-1.5">
                     <ChevronDown
                       size={11}
-                      className={`text-muted/60 group-hover:text-white transition-transform duration-150 ${isCollapsed ? '-rotate-90' : 'rotate-0'
-                        }`}
+                      className={`text-muted/60 group-hover:text-white transition-transform duration-150 ${
+                        isCollapsed ? '-rotate-90' : 'rotate-0'
+                      }`}
                     />
                     <span className={hasActiveChild ? 'text-primary-light font-bold' : ''}>
                       {section.title}
@@ -258,17 +312,19 @@ export function Layout({ children }: { children: ReactNode }) {
                         <Link
                           key={item.path}
                           to={item.path}
-                          className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all group relative ${isActive
+                          className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all group relative ${
+                            isActive
                               ? 'bg-primary/20 text-white font-semibold border border-primary/35 shadow-sm'
                               : 'text-slate-400 hover:text-white hover:bg-surface/80 hover:border hover:border-border/60'
-                            }`}
+                          }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div
-                              className={`p-1 rounded-md transition-colors shrink-0 ${isActive
+                              className={`p-1 rounded-md transition-colors shrink-0 ${
+                                isActive
                                   ? 'bg-primary text-white shadow-sm'
                                   : 'text-muted group-hover:text-white bg-surface-highlight/50'
-                                }`}
+                              }`}
                             >
                               <Icon size={14} />
                             </div>
@@ -305,19 +361,21 @@ export function Layout({ children }: { children: ReactNode }) {
                 <div
                   className="bg-healthy h-full transition-all duration-500"
                   style={{
-                    width: `${summary?.servers.total
-                        ? ((summary.servers.online) / summary.servers.total) * 100
+                    width: `${
+                      summary?.servers.total
+                        ? (summary.servers.online / summary.servers.total) * 100
                         : 0
-                      }%`,
+                    }%`,
                   }}
                 />
                 <div
                   className="bg-warning h-full transition-all duration-500"
                   style={{
-                    width: `${summary?.servers.total
+                    width: `${
+                      summary?.servers.total
                         ? (summary.servers.suspect / summary.servers.total) * 100
                         : 0
-                      }%`,
+                    }%`,
                   }}
                 />
               </div>
@@ -338,10 +396,11 @@ export function Layout({ children }: { children: ReactNode }) {
           <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-surface/50 border border-border">
             <div className="flex items-center gap-2 text-xs">
               <span
-                className={`w-2 h-2 rounded-full ${wsStatus === 'connected'
+                className={`w-2 h-2 rounded-full ${
+                  wsStatus === 'connected'
                     ? 'bg-healthy animate-pulse-glow shadow-glow-healthy'
                     : 'bg-warning'
-                  }`}
+                }`}
               />
               <span className="text-muted font-mono text-[11px]">
                 {wsStatus === 'connected' ? 'WS STREAM' : 'POLLING'}
