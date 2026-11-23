@@ -170,6 +170,9 @@ func main() {
 	// Universal 1-line installer: curl -sSL http://<host>/install.sh | sudo bash -s -- --token <TOKEN>
 	r.Get("/install.sh", agents.HandleInstallScript())
 
+	// Kubernetes DaemonSet manifest download
+	r.Get("/deploy/sentrix-daemonset.yaml", containers.HandleServeK8sDaemonSet())
+
 	// OpenTelemetry standard OTLP/HTTP trace receiver endpoints
 	r.Post("/v1/traces", traces.HandleIngestTraces(pool))
 	r.Post("/otlp/v1/traces", traces.HandleIngestTraces(pool))
@@ -200,6 +203,12 @@ func main() {
 			// Public agent binary download for the universal installer
 			r.Get("/downloads/agent", agents.HandleDownloadAgent())
 
+			// Kubernetes & APM telemetry ingestion endpoints
+			r.Get("/kubernetes/daemonset.yaml", containers.HandleServeK8sDaemonSet())
+			r.Post("/kubernetes/ingest", containers.HandleIngestK8sMetrics(pool))
+			r.Post("/containers/ingest", containers.HandleIngestContainerMetrics(pool))
+			r.Post("/apm/metrics", services.HandleIngestAPMMetrics(pool))
+
 			r.Group(func(r chi.Router) {
 				r.Use(metrics.AgentAuthMiddleware(pool))
 				r.Post("/agent/telemetry", metrics.HandleTelemetry(pool))
@@ -228,6 +237,8 @@ func main() {
 				// Services & Infrastructure catalog
 				r.Get("/services", services.HandleListServices(pool))
 				r.Post("/services", services.HandleCreateService(pool))
+				r.Post("/services/{serviceID}/apm", services.HandleIngestServiceAPM(pool))
+				r.Post("/apm/metrics", services.HandleIngestAPMMetrics(pool))
 				r.Get("/infrastructure", services.HandleGetInfrastructure(pool))
 
 				// Centralized Structured Logs
@@ -283,9 +294,11 @@ func main() {
 
 				// Containers & Kubernetes
 				r.Get("/containers", containers.HandleListContainers(pool))
+				r.Post("/containers/ingest", containers.HandleIngestContainerMetrics(pool))
 				r.Get("/kubernetes/overview", containers.HandleGetK8sOverview(pool))
 				r.Get("/kubernetes/nodes", containers.HandleGetK8sNodes(pool))
 				r.Get("/kubernetes/workloads", containers.HandleGetK8sWorkloads(pool))
+				r.Post("/kubernetes/ingest", containers.HandleIngestK8sMetrics(pool))
 
 				// Operational Runbooks & Safe Automation
 				r.Get("/runbooks", automation.HandleListRunbooks(pool))

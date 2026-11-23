@@ -1,6 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { fetchJSON, mutateJSON } from '../lib/api';
 
+export interface ServiceEndpoint {
+  method: string;
+  path: string;
+  rps: number;
+  p95_ms: number;
+  error_rate_pct: number;
+}
+
 export interface ServiceEntity {
   id: string;
   name: string;
@@ -15,6 +23,15 @@ export interface ServiceEntity {
   server_count: number;
   incident_count: number;
   uptime: number;
+  // APM Golden Signals
+  rps: number;
+  p50_ms: number;
+  p95_ms: number;
+  p99_ms: number;
+  error_rate_pct: number;
+  apdex_score: number;
+  throughput_mb_s: number;
+  endpoints?: ServiceEndpoint[];
   created_at: string;
 }
 

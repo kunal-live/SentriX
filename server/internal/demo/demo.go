@@ -1309,6 +1309,8 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		// Services & Infrastructure catalog
 		r.Get("/services", services.HandleListServices(nil))
 		r.Post("/services", services.HandleCreateService(nil))
+		r.Post("/services/{serviceID}/apm", services.HandleIngestServiceAPM(nil))
+		r.Post("/apm/metrics", services.HandleIngestAPMMetrics(nil))
 		r.Get("/infrastructure", services.HandleGetInfrastructure(nil))
 
 		// Centralized Logs
@@ -1858,9 +1860,12 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 
 		// Containers & Kubernetes
 		r.Get("/containers", containers.HandleListContainers(nil))
+		r.Post("/containers/ingest", containers.HandleIngestContainerMetrics(nil))
 		r.Get("/kubernetes/overview", containers.HandleGetK8sOverview(nil))
 		r.Get("/kubernetes/nodes", containers.HandleGetK8sNodes(nil))
 		r.Get("/kubernetes/workloads", containers.HandleGetK8sWorkloads(nil))
+		r.Post("/kubernetes/ingest", containers.HandleIngestK8sMetrics(nil))
+		r.Get("/kubernetes/daemonset.yaml", containers.HandleServeK8sDaemonSet())
 
 		// Incident Intelligence & AI RCA
 		r.Get("/incidents/{incidentID}/rca", ai.HandleGetIncidentRCA(nil))

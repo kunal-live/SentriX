@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { 
   Box, Cpu, HardDrive, RefreshCw, Activity, ArrowDownLeft, ArrowUpRight, 
-  RotateCw, AlertTriangle, CheckCircle2, Search, Filter, Server
+  RotateCw, AlertTriangle, CheckCircle2, Search, Filter, Server,
+  Terminal, Copy, Check
 } from 'lucide-react';
 import { MetricCard, EmptyState, LoadingState } from '../../components/ui/Primitives';
 
@@ -30,6 +31,8 @@ export const ContainersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [copiedDockerCmd, setCopiedDockerCmd] = useState(false);
 
   const fetchContainers = async () => {
     try {
@@ -85,6 +88,13 @@ export const ContainersPage: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowGuideModal(true)}
+            className="flex items-center gap-2 px-3.5 py-2 bg-primary hover:bg-primary-hover text-white text-xs font-semibold rounded-xl shadow-glow-primary transition-all"
+          >
+            <Terminal className="w-4 h-4" />
+            <span>Docker Ingestion Guide</span>
+          </button>
           <button
             onClick={fetchContainers}
             className="flex items-center gap-2 px-3 py-2 bg-[#1b1e24] hover:bg-[#252932] border border-[#2e3440] text-gray-300 text-sm font-medium rounded-lg transition-colors"
@@ -258,6 +268,68 @@ export const ContainersPage: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Docker / Container Ingestion Modal */}
+      {showGuideModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="glass-card rounded-2xl p-6 border border-cyan-500/40 shadow-glow-primary max-w-xl w-full space-y-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Terminal className="w-5 h-5 text-cyan-400" />
+                <span>Docker Container Telemetry Ingestion</span>
+              </h2>
+              <button
+                onClick={() => setShowGuideModal(false)}
+                className="text-gray-400 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-muted leading-relaxed">
+              SentriX ingests container statistics directly from Docker engine socket (<code className="text-cyan-300">/var/run/docker.sock</code>) via the SentriX Agent or via standalone cAdvisor.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-mono text-gray-400">Method A: Run with Host SentriX Agent</label>
+                <div className="flex items-center justify-between p-3 rounded-xl bg-[#0e1116] border border-[#232730] font-mono text-xs text-gray-200 mt-1">
+                  <code className="truncate mr-2">curl -sSL http://169.58.138.136:8080/install.sh | sudo bash -s -- --token YOUR_TOKEN --enable-docker</code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('curl -sSL http://169.58.138.136:8080/install.sh | sudo bash -s -- --token YOUR_TOKEN --enable-docker');
+                      setCopiedDockerCmd(true);
+                      setTimeout(() => setCopiedDockerCmd(false), 2000);
+                    }}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold shrink-0"
+                  >
+                    {copiedDockerCmd ? <Check size={13} /> : <Copy size={13} />}
+                    <span>{copiedDockerCmd ? 'Copied' : 'Copy'}</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-mono text-gray-400">Method B: Direct HTTP Ingestion API</label>
+                <pre className="p-3 rounded-xl bg-[#0e1116] border border-[#232730] font-mono text-[11px] text-gray-300 overflow-x-auto mt-1">
+{`curl -X POST http://169.58.138.136:8080/api/v1/containers/ingest \\
+  -H "Content-Type: application/json" \\
+  -d '[{"name":"my-app","image":"node:20","cpu_usage_pct":12.5,"memory_usage_bytes":134217728,"status":"RUNNING"}]'`}
+                </pre>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setShowGuideModal(false)}
+                className="px-4 py-2 rounded-xl bg-surface hover:bg-[#20242c] text-white text-xs font-semibold border border-border"
+              >
+                Done
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
