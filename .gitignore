@@ -27,6 +27,17 @@ agent/build/
 .DS_Store
 Thumbs.db
 
+# Environment & Secrets
+.env
+.env.*
+*.env
+!*.env.example
+!deploy/agent/agent.env.example
+*.pem
+*.key
+*.cert
+*.spool.bin
+
 # Tooling and Artifacts
 archify/
 *.visual-check.*
