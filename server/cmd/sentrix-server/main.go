@@ -108,6 +108,7 @@ func main() {
 				}
 
 				logs.StartLiveCollectors(context.Background(), pool)
+				traces.SeedTracesDB(context.Background(), pool)
 			} else {
 				p.Close()
 			}
@@ -168,6 +169,10 @@ func main() {
 
 	// Universal 1-line installer: curl -sSL http://<host>/install.sh | sudo bash -s -- --token <TOKEN>
 	r.Get("/install.sh", agents.HandleInstallScript())
+
+	// OpenTelemetry standard OTLP/HTTP trace receiver endpoints
+	r.Post("/v1/traces", traces.HandleIngestTraces(pool))
+	r.Post("/otlp/v1/traces", traces.HandleIngestTraces(pool))
 
 	if isDBLive {
 		slog.Info("Mounting persistent database endpoints")

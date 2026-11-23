@@ -27,6 +27,7 @@ SentriX is a modern, lightweight, high-performance infrastructure monitoring and
 - **Centralized Structured Logs**: High-velocity log aggregation with multi-field search, severity level filtering (`DEBUG`, `INFO`, `WARN`, `ERROR`), and real-time live tailing.
 - **Reliability, Incidents & Alert Rules**: Metric threshold evaluation engine with hysteresis/cooling, incident lifecycles (`OPEN`, `ACKNOWLEDGED`, `RESOLVED`), silence windows, and multi-channel notifications (Slack, Discord, PagerDuty, Webhooks).
 - **Synthetic Health Probes**: Automated HTTP and TCP uptime checks with response latency and availability tracking.
+- **Distributed Tracing (OpenTelemetry)**: Closes the third pillar of observability with native OTLP/HTTP span ingestion (`/v1/traces`), TimescaleDB span storage, interactive microservice waterfall timing, and cross-signal log correlation.
 - **Developer Platform & RBAC**: Scoped ingestion tokens, programmatic developer API keys, role-based access control (`ADMIN`, `OPERATOR`, `VIEWER`), and immutable security audit logs.
 - **Enterprise Security Hardened**: HttpOnly + SameSite cookies, session revocation on password changes, brute-force mitigation, and zero plaintext credential exposure.
 
@@ -300,6 +301,8 @@ SentriX incorporates strict enterprise security controls:
 | `GET`  | `/api/v1/downloads/agent` | Download agent binary from server |
 | `GET` | `/api/v1/logs` | Centralized log search across services and severity levels |
 | `POST` | `/api/v1/logs/batch` | High-throughput structured log ingestion |
+| `GET`  | `/api/v1/traces` | Query distributed traces with service & duration filtering |
+| `POST` | `/v1/traces` | Standard OpenTelemetry OTLP/HTTP JSON trace ingestion receiver |
 | `GET` | `/api/v1/incidents` | List active, acknowledged, and resolved incidents |
 | `PATCH` | `/api/v1/incidents/{id}/status` | Update incident triage status and resolution notes |
 | `GET` | `/api/v1/alerts/rules` | List configured metric alert threshold rules |
