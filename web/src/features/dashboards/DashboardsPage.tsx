@@ -44,6 +44,7 @@ export function DashboardsPage() {
   const activeServer = servers.find((s) => s.id === activeServerId) || servers[0];
 
   const { data: cpuMetrics } = useServerMetrics(activeServerId, 'cpu', '1h');
+  const { data: memoryMetrics } = useServerMetrics(activeServerId, 'memory', '1h');
   const { data: diskMetrics } = useServerMetrics(activeServerId, 'disk', '1h');
   const { data: logsData } = useCentralLogs({ limit: 12 }, true);
   const { data: openIncidents } = useIncidents('open');
@@ -280,7 +281,8 @@ export function DashboardsPage() {
                 <div className="py-2">
                   {widget.type === 'METRIC_LINE' && (() => {
                     const isDisk = widget.metric?.includes('disk');
-                    const realPoints = isDisk ? diskMetrics?.points : cpuMetrics?.points;
+                    const isMem = widget.metric?.includes('memory');
+                    const realPoints = isDisk ? diskMetrics?.points : isMem ? memoryMetrics?.points : cpuMetrics?.points;
                     const chartData = (realPoints && realPoints.length > 0)
                       ? realPoints.map((p) => ({
                           time: new Date(p.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -288,47 +290,59 @@ export function DashboardsPage() {
                         }))
                       : [];
 
+                    const metricName = isDisk ? 'Disk' : isMem ? 'RAM' : 'CPU';
+                    const latestVal = chartData.length > 0 ? chartData[chartData.length - 1].value : null;
+
                     if (chartData.length === 0) {
                       return (
                         <div className="h-56 w-full flex flex-col items-center justify-center text-muted text-xs font-mono border border-dashed border-border/60 rounded-xl space-y-2">
                           <Activity size={22} className="text-muted/40 animate-pulse" />
-                          <span>Awaiting live {isDisk ? 'disk' : 'CPU'} metrics for {activeServer?.name || activeServer?.hostname || 'node'}</span>
+                          <span>Awaiting live {metricName} metrics for {activeServer?.name || activeServer?.hostname || 'node'}</span>
                           <span className="text-[10px] text-text-dim">Streaming from TimescaleDB</span>
                         </div>
                       );
                     }
 
                     return (
-                      <div className="h-56 w-full">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#262b35" vertical={false} />
-                            <XAxis dataKey="time" stroke="#717a8c" tick={{ fontSize: 10 }} />
-                            <YAxis stroke="#717a8c" tick={{ fontSize: 10 }} domain={[0, 100]} />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: '#161920',
-                                borderColor: '#303642',
-                                borderRadius: '8px',
-                                fontSize: '11px',
-                              }}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="value"
-                              stroke="#6366f1"
-                              strokeWidth={2.5}
-                              dot={{ fill: '#6366f1', r: 3 }}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-mono px-1">
+                          <span className="text-muted">Current {metricName}:</span>
+                          <span className="text-primary-light font-bold">{latestVal !== null ? `${latestVal}%` : 'N/A'}</span>
+                        </div>
+                        <div className="h-52 w-full">
+                          <ResponsiveContainer width="100%" height="100%">
+                            <LineChart data={chartData}>
+                              <CartesianGrid strokeDasharray="3 3" stroke="#262b35" vertical={false} />
+                              <XAxis dataKey="time" stroke="#717a8c" tick={{ fontSize: 10 }} />
+                              <YAxis stroke="#717a8c" tick={{ fontSize: 10 }} domain={[0, 100]} />
+                              <Tooltip
+                                contentStyle={{
+                                  backgroundColor: '#161920',
+                                  borderColor: '#303642',
+                                  borderRadius: '8px',
+                                  fontSize: '11px',
+                                }}
+                                formatter={(v: any) => [`${v}%`, metricName]}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="value"
+                                stroke="#6366f1"
+                                strokeWidth={2.5}
+                                dot={{ fill: '#6366f1', r: 3 }}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
                     );
                   })()}
 
                   {widget.type === 'METRIC_GAUGE' && (() => {
-                    const isMem = widget.metric?.includes('memory') || widget.title?.toLowerCase().includes('pool') || widget.title?.toLowerCase().includes('database') || widget.title?.toLowerCase().includes('memory');
-                    const rawVal = isMem ? (activeServer?.memory ?? 0) : (activeServer?.cpu ?? 0);
+                    const isDisk = widget.metric?.includes('disk') || widget.title?.toLowerCase().includes('storage') || widget.title?.toLowerCase().includes('disk');
+                    const isMem = widget.metric?.includes('memory') || widget.title?.toLowerCase().includes('pool') || widget.title?.toLowerCase().includes('database') || widget.title?.toLowerCase().includes('memory') || widget.title?.toLowerCase().includes('ram');
+                    const rawVal = isDisk ? (activeServer?.disk ?? 0) : isMem ? (activeServer?.memory ?? 0) : (activeServer?.cpu ?? 0);
+                    const label = isDisk ? 'Disk Space' : isMem ? 'RAM Allocation' : 'CPU Load';
                     const gaugeVal = Math.round(rawVal * 10) / 10;
                     const gaugeColor = gaugeVal >= 85 ? 'text-critical' : gaugeVal >= 70 ? 'text-warning' : 'text-healthy';
                     const barColor = gaugeVal >= 85 ? 'bg-critical' : gaugeVal >= 70 ? 'bg-warning' : 'bg-healthy';
@@ -344,7 +358,7 @@ export function DashboardsPage() {
                         </div>
                         <p className="text-[11px] font-mono text-muted">
                           {activeServer
-                            ? `${activeServer.name || activeServer.hostname} • ${isMem ? 'RAM Allocation' : 'CPU Load'}`
+                            ? `${activeServer.name || activeServer.hostname} • ${label}`
                             : 'Awaiting host telemetry...'}
                         </p>
                       </div>

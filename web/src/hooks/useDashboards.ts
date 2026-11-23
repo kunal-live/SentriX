@@ -34,7 +34,11 @@ export function useCreateDashboard() {
   return useMutation({
     mutationFn: (payload: Partial<Dashboard>) =>
       mutateJSON<Dashboard>('/dashboards', 'POST', payload),
-    onSuccess: () => {
+    onSuccess: (newDashboard) => {
+      queryClient.setQueryData<Dashboard[]>(['dashboards'], (prev) => {
+        if (!prev) return [newDashboard];
+        return [newDashboard, ...prev.filter((d) => d.id !== newDashboard.id)];
+      });
       queryClient.invalidateQueries({ queryKey: ['dashboards'] });
     },
   });
@@ -48,7 +52,11 @@ export function useAddWidget(dashboardId?: string) {
       if (!dashboardId) throw new Error('No dashboard selected');
       return mutateJSON<Dashboard>(`/dashboards/${dashboardId}/widgets`, 'POST', widget);
     },
-    onSuccess: () => {
+    onSuccess: (updatedDashboard) => {
+      queryClient.setQueryData<Dashboard[]>(['dashboards'], (prev) => {
+        if (!prev) return [updatedDashboard];
+        return prev.map((d) => (d.id === updatedDashboard.id ? updatedDashboard : d));
+      });
       queryClient.invalidateQueries({ queryKey: ['dashboards'] });
     },
   });
@@ -62,7 +70,11 @@ export function useDeleteWidget(dashboardId?: string) {
       if (!dashboardId) throw new Error('No dashboard selected');
       return mutateJSON<Dashboard>(`/dashboards/${dashboardId}/widgets/${widgetId}`, 'DELETE');
     },
-    onSuccess: () => {
+    onSuccess: (updatedDashboard) => {
+      queryClient.setQueryData<Dashboard[]>(['dashboards'], (prev) => {
+        if (!prev) return [];
+        return prev.map((d) => (d.id === updatedDashboard.id ? updatedDashboard : d));
+      });
       queryClient.invalidateQueries({ queryKey: ['dashboards'] });
     },
   });
@@ -74,7 +86,11 @@ export function useDeleteDashboard() {
   return useMutation({
     mutationFn: (dashboardId: string) =>
       mutateJSON(`/dashboards/${dashboardId}`, 'DELETE'),
-    onSuccess: () => {
+    onSuccess: (_, deletedId) => {
+      queryClient.setQueryData<Dashboard[]>(['dashboards'], (prev) => {
+        if (!prev) return [];
+        return prev.filter((d) => d.id !== deletedId);
+      });
       queryClient.invalidateQueries({ queryKey: ['dashboards'] });
     },
   });

@@ -98,12 +98,8 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 			payload.Timestamp = now
 		}
 
-		drift := now.Sub(payload.Timestamp)
-		if drift < 0 {
-			drift = -drift
-		}
-
-		if drift > 5*time.Minute {
+		// Allow historical spooled telemetry up to 7 days old, and tolerate up to 5 minutes forward clock drift.
+		if payload.Timestamp.After(now.Add(5*time.Minute)) || payload.Timestamp.Before(now.Add(-7*24*time.Hour)) {
 			selfmetrics.Global().IngestFailures.Add(1)
 			http.Error(w, "timestamp outside acceptance window", http.StatusBadRequest)
 			return
