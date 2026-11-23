@@ -163,7 +163,7 @@ docker compose down
 ### 1. Fleet Overview (`/`)
 - **Real-Time Host Grid**: Live CPU, memory, and disk saturation bars, host uptime, kernel version, and agent release.
 - **Instant Search & Status Filter**: Search by hostname, IP address, or node ID, and filter by status (`ONLINE`, `SUSPECT`, `OFFLINE`).
-- **1-Click Agent Enrollment**: Generate cryptographically hashed, single-use tokens valid for 24 hours with automatic copyable curl/bash commands.
+- **1-Click Agent Enrollment**: Generate cryptographically hashed, single-use tokens valid for 24 hours with a universal `curl | bash` one-liner installer.
 - **Server Details Drill-Down** (`/servers/:id`): Deep inspection with interactive time-series charts across multiple lookback windows (15m, 1h, 6h, 24h, 7d).
 
 ### 2. Custom Dashboards (`/dashboards`)
@@ -201,20 +201,43 @@ docker compose down
 
 ---
 
-## 💻 Native C Agent Installation
+## 💻 Agent Installation — Universal 1-Line Installer
 
-### Secure Fleet Node Enrollment
-1. Navigate to the **Fleet Overview** in the dashboard.
-2. Click **"Enroll Node"**.
-3. Generate a single-use, 24-hour cryptographically hashed enrollment token.
-4. Execute the enrollment script over HTTPS with certificate hostname verification:
+### Quick Enrollment (Datadog / Netdata Style)
+
+SentriX provides a **single `curl | bash` command** to install, enroll, and start the agent on any Linux host — no manual downloads, no multi-step scripts:
+
+```bash
+curl -sSL http://<YOUR_SENTRIX_SERVER>:8080/install.sh | sudo bash -s -- --token <ENROLLMENT_TOKEN>
+```
+
+**What this does automatically:**
+1. Creates the `sentrix` system user and directories
+2. Downloads the agent binary directly from your SentriX server
+3. Installs and configures the systemd service
+4. Enrolls the node using the single-use token
+5. Writes secure credentials to `/etc/sentrix/agent.env` (mode `0600`)
+6. Starts and enables the agent service
+
+**To generate a token:**
+1. Navigate to the **Fleet Overview** in the dashboard
+2. Click **"Enroll Node"** — a token and the full `curl` command are auto-generated
+3. Copy and run the command on the target server
+
+The node will appear on your Fleet Overview within ~30 seconds.
+
+> **API Endpoints**: The installer uses `GET /install.sh` (dynamic script) and `GET /api/v1/downloads/agent` (binary download), both served directly by your SentriX server instance.
+
+### Manual Installation (Advanced)
+
+For air-gapped environments or custom setups:
 
 ```bash
 # Download and install agent binary
 sudo ./scripts/install-agent.sh /path/to/sentrix-agent
 
-# Enroll the node with single-use token over HTTPS
-sudo ./scripts/enroll-agent.sh <your-sentrix-host> 443 <ENROLLMENT_TOKEN> 1.0.0
+# Enroll the node with single-use token
+sudo ./scripts/enroll-agent.sh <your-sentrix-host> 8080 <ENROLLMENT_TOKEN> 1.0.0
 
 # Start and enable the agent service (runs non-root with 0600 config)
 sudo systemctl enable --now sentrix-agent
@@ -273,6 +296,8 @@ SentriX incorporates strict enterprise security controls:
 | `GET` | `/api/v1/metrics/query` | Cross-node multi-server TimescaleDB time-series query |
 | `POST` | `/api/v1/agent/telemetry` | High-throughput metric ingestion from C agents |
 | `POST` | `/api/v1/agents/enrollment-tokens` | Generate 24-hour single-use agent enrollment tokens |
+| `GET`  | `/install.sh` | Dynamic universal installer shell script |
+| `GET`  | `/api/v1/downloads/agent` | Download agent binary from server |
 | `GET` | `/api/v1/logs` | Centralized log search across services and severity levels |
 | `POST` | `/api/v1/logs/batch` | High-throughput structured log ingestion |
 | `GET` | `/api/v1/incidents` | List active, acknowledged, and resolved incidents |

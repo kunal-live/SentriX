@@ -166,6 +166,9 @@ func main() {
 	r.Get("/metrics", selfmetrics.HandlePrometheusMetrics())
 	r.Get("/self-metrics", selfmetrics.HandleMetrics())
 
+	// Universal 1-line installer: curl -sSL http://<host>/install.sh | sudo bash -s -- --token <TOKEN>
+	r.Get("/install.sh", agents.HandleInstallScript())
+
 	if isDBLive {
 		slog.Info("Mounting persistent database endpoints")
 
@@ -188,6 +191,9 @@ func main() {
 			// Agent endpoints
 			enrollLimiter := security.NewRateLimiter(10, 20)
 			r.With(security.HTTPRateLimit(enrollLimiter, security.IPKey, "Too many enrollment requests; please try again later")).Post("/agent/enroll", agents.HandleEnroll(pool))
+
+			// Public agent binary download for the universal installer
+			r.Get("/downloads/agent", agents.HandleDownloadAgent())
 
 			r.Group(func(r chi.Router) {
 				r.Use(metrics.AgentAuthMiddleware(pool))

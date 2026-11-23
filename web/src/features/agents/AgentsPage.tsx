@@ -424,22 +424,12 @@ export const AgentsPage: React.FC = () => {
 
             <div className="p-6 space-y-4">
               <p className="text-sm text-gray-300">
-                Execute this single command on the target host (Linux x86_64 or ARM64) to automatically install, enroll, and configure the SentriX C collector daemon:
+                Run this single command on the target host (Linux x86_64 or ARM64) to automatically download, install, enroll, and start the SentriX agent:
               </p>
 
-              <div className="p-4 rounded-xl bg-black/60 border border-[#232730] font-mono text-xs text-blue-300 space-y-2 overflow-x-auto select-all whitespace-pre-wrap">
+              <div className="p-4 rounded-xl bg-black/60 border border-[#232730] font-mono text-xs text-emerald-400 overflow-x-auto select-all whitespace-pre-wrap">
                 <code>
-{`# 1. Download & verify native agent binary
-curl -sSL https://github.com/kunal-live/SentriX/releases/download/v1.0.0/sentrix-agent-1.0.0-linux-x86_64.tar.gz | tar -xz
-
-# 2. Install agent service
-sudo ./scripts/install-agent.sh ./bin/sentrix-agent
-
-# 3. Securely enroll node with single-use credential
-sudo ./scripts/enroll-agent.sh ${window.location.hostname || 'localhost'} ${window.location.port || '8080'} ${enrollToken || 'enr_live_token'} 1.0.0
-
-# 4. Enable service
-sudo systemctl enable --now sentrix-agent`}
+{`curl -sSL ${window.location.protocol}//${window.location.host}/install.sh | sudo bash -s -- --token ${enrollToken || '<TOKEN>'}`}
                 </code>
               </div>
 

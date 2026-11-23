@@ -19,8 +19,7 @@ export function EnrollServerModal({ isOpen, onClose }: EnrollServerModalProps) {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const serverHost = window.location.hostname || '127.0.0.1';
-  const serverPort = window.location.port || '8080';
+  const serverOrigin = `${window.location.protocol}//${window.location.host}`;
 
   async function generateToken() {
     setLoading(true);
@@ -48,10 +47,7 @@ export function EnrollServerModal({ isOpen, onClose }: EnrollServerModalProps) {
   if (!isOpen) return null;
 
   const installCommand = tokenData
-    ? `curl -sSL https://github.com/kunal-live/SentriX/releases/download/v1.0.0/sentrix-agent-1.0.0-linux-x86_64.tar.gz | tar -xz && \\
-sudo ./scripts/install-agent.sh ./bin/sentrix-agent && \\
-sudo ./scripts/enroll-agent.sh ${serverHost} ${serverPort} ${tokenData.token} 1.0.0 && \\
-sudo systemctl enable --now sentrix-agent`
+    ? `curl -sSL ${serverOrigin}/install.sh | sudo bash -s -- --token ${tokenData.token}`
     : '';
 
   function handleCopy() {
