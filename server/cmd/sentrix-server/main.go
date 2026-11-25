@@ -348,6 +348,7 @@ func main() {
 				r.Get("/databases/postgres", databases.HandleGetPostgresDiagnostics(pool))
 				r.Post("/databases/slow-queries/ingest", databases.HandleIngestSlowQueries(pool))
 				r.Get("/network/diagnostics", network.HandleGetNetworkDiagnostics(pool))
+				r.Post("/network/flows/ingest", network.HandleIngestNetworkFlows(pool))
 
 				// Phase 23: Compliance, Disaster Recovery & SBOM
 				r.Get("/compliance/frameworks", compliance.HandleListFrameworks(pool))

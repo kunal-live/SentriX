@@ -1919,6 +1919,7 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		r.Get("/databases/postgres", databases.HandleGetPostgresDiagnostics(nil))
 		r.Post("/databases/slow-queries/ingest", databases.HandleIngestSlowQueries(nil))
 		r.Get("/network/diagnostics", network.HandleGetNetworkDiagnostics(nil))
+		r.Post("/network/flows/ingest", network.HandleIngestNetworkFlows(nil))
 
 		// Phase 23: Compliance, Disaster Recovery & SBOM
 		r.Get("/compliance/frameworks", compliance.HandleListFrameworks(nil))
