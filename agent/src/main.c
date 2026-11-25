@@ -11,9 +11,27 @@
 #include "collector.h"
 #include "checks.h"
 #include "buffer.h"
+#include <time.h>
 
-extern void build_telemetry_json(char *buffer, size_t size, const char *agent_id, uint64_t seq, const SystemMetrics *m);
+extern void build_telemetry_json(char *buffer, size_t size, const char *agent_id, uint64_t seq, const char *restart_nonce, const SystemMetrics *m);
 extern int send_telemetry(const char *host, int port, const char *path, const char *json_payload, const char *auth_token);
+
+static void generate_restart_nonce(char *out, size_t out_len) {
+    unsigned char rnd[16] = {0};
+    FILE *urnd = fopen("/dev/urandom", "rb");
+    if (urnd) {
+        size_t n = fread(rnd, 1, sizeof(rnd), urnd);
+        fclose(urnd);
+        if (n == sizeof(rnd) && out_len >= 33) {
+            for (size_t i = 0; i < sizeof(rnd); i++) {
+                snprintf(out + (i * 2), 3, "%02x", rnd[i]);
+            }
+            out[32] = '\0';
+            return;
+        }
+    }
+    snprintf(out, out_len, "%lx-%lx", (unsigned long)time(NULL), (unsigned long)getpid());
+}
 
 #define CONFIG_MAX_LEN 256
 
@@ -232,6 +250,8 @@ int main(int argc, char *argv[]) {
 
     uint64_t sequence = 1;
     char json_buffer[2048];
+    char restart_nonce[64];
+    generate_restart_nonce(restart_nonce, sizeof(restart_nonce));
     SystemMetrics metrics;
 
     typedef enum {
@@ -251,7 +271,7 @@ int main(int argc, char *argv[]) {
         collect_system_load(&metrics.load_avg_1m);
         collect_uptime(&metrics.uptime_seconds);
 
-        build_telemetry_json(json_buffer, sizeof(json_buffer), config.agent_id, sequence, &metrics);
+        build_telemetry_json(json_buffer, sizeof(json_buffer), config.agent_id, sequence, restart_nonce, &metrics);
 
         // 1. Drain offline spool buffer if connected
         if (spool_buf.items_queued > 0 && transport_state != AGENT_STATE_DRAINING) {

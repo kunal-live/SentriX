@@ -1,6 +1,7 @@
 package traces
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -69,6 +70,14 @@ func (v otlpAttributeValue) ToValue() any {
 				return n
 			}
 			return val
+		case json.Number:
+			if n, err := val.Int64(); err == nil {
+				return n
+			}
+			if f, err := val.Float64(); err == nil {
+				return int64(f)
+			}
+			return val.String()
 		case float64:
 			return int64(val)
 		default:
@@ -128,8 +137,13 @@ var (
 	traceBuffer  []TraceDetail
 )
 
-func init() {
-	seedInMemoryTraces()
+// EnableDemoMode seeds sample distributed traces into memory for standalone demo mode.
+func EnableDemoMode() {
+	traceStoreMu.Lock()
+	defer traceStoreMu.Unlock()
+	if len(traceBuffer) == 0 {
+		seedInMemoryTraces()
+	}
 }
 
 func seedInMemoryTraces() {
@@ -384,39 +398,54 @@ func HandleListTraces(pool *pgxpool.Pool) http.HandlerFunc {
 			query += " ORDER BY start_time DESC LIMIT 100"
 
 			rows, err := pool.Query(r.Context(), query, args...)
-			if err == nil {
-				defer rows.Close()
-				dbTraces := make([]TraceDetail, 0)
-				for rows.Next() {
-					var t TraceDetail
-					if err := rows.Scan(&t.TraceID, &t.RootService, &t.RootOperation, &t.DurationMs, &t.StartTime, &t.Status, &t.SpanCount); err == nil {
-						// Load spans for each trace
-						spanRows, sErr := pool.Query(r.Context(), `
-							SELECT span_id, parent_span_id, service_name, operation, duration_ms, start_time, status, status_code, attributes
-							FROM spans WHERE trace_id = $1 ORDER BY start_time ASC
-						`, t.TraceID)
-						if sErr == nil {
-							for spanRows.Next() {
-								var s Span
-								var attrBytes []byte
-								if err := spanRows.Scan(&s.SpanID, &s.ParentSpanID, &s.ServiceName, &s.Operation, &s.DurationMs, &s.StartTime, &s.Status, &s.StatusCode, &attrBytes); err == nil {
-									s.TraceID = t.TraceID
-									if len(attrBytes) > 0 {
-										_ = json.Unmarshal(attrBytes, &s.Attributes)
-									}
-									t.Spans = append(t.Spans, s)
-								}
-							}
-							spanRows.Close()
-						}
-						dbTraces = append(dbTraces, t)
-					}
-				}
-				if len(dbTraces) > 0 {
-					api.RespondJSON(w, http.StatusOK, dbTraces)
-					return
+			if err != nil {
+				slog.Error("failed to query traces", "error", err)
+				api.RespondError(w, r, http.StatusInternalServerError, "DB_ERROR", "Failed to query traces")
+				return
+			}
+			defer rows.Close()
+
+			dbTraces := make([]TraceDetail, 0)
+			traceIDs := make([]string, 0)
+			for rows.Next() {
+				var t TraceDetail
+				if err := rows.Scan(&t.TraceID, &t.RootService, &t.RootOperation, &t.DurationMs, &t.StartTime, &t.Status, &t.SpanCount); err == nil {
+					t.Spans = []Span{}
+					dbTraces = append(dbTraces, t)
+					traceIDs = append(traceIDs, t.TraceID)
 				}
 			}
+
+			if len(traceIDs) > 0 {
+				spanRows, sErr := pool.Query(r.Context(), `
+					SELECT span_id, trace_id, parent_span_id, service_name, operation, duration_ms, start_time, status, status_code, attributes
+					FROM spans
+					WHERE trace_id = ANY($1)
+					ORDER BY start_time ASC
+				`, traceIDs)
+				if sErr == nil {
+					spansByTrace := make(map[string][]Span, len(traceIDs))
+					for spanRows.Next() {
+						var s Span
+						var attrBytes []byte
+						if scanErr := spanRows.Scan(&s.SpanID, &s.TraceID, &s.ParentSpanID, &s.ServiceName, &s.Operation, &s.DurationMs, &s.StartTime, &s.Status, &s.StatusCode, &attrBytes); scanErr == nil {
+							if len(attrBytes) > 0 {
+								_ = json.Unmarshal(attrBytes, &s.Attributes)
+							}
+							spansByTrace[s.TraceID] = append(spansByTrace[s.TraceID], s)
+						}
+					}
+					spanRows.Close()
+					for i := range dbTraces {
+						if list, ok := spansByTrace[dbTraces[i].TraceID]; ok {
+							dbTraces[i].Spans = list
+						}
+					}
+				}
+			}
+
+			api.RespondJSON(w, http.StatusOK, dbTraces)
+			return
 		}
 
 		// In-memory fallback
@@ -478,6 +507,8 @@ func HandleGetTrace(pool *pgxpool.Pool) http.HandlerFunc {
 				api.RespondJSON(w, http.StatusOK, t)
 				return
 			}
+			api.RespondError(w, r, http.StatusNotFound, "NOT_FOUND", "Trace ID not found")
+			return
 		}
 
 		traceStoreMu.RLock()
@@ -506,16 +537,20 @@ func HandleIngestTraces(pool *pgxpool.Pool) http.HandlerFunc {
 
 		var tracesToSave []TraceDetail
 
-		// 1. Try parsing standard OpenTelemetry OTLP payload
+		// 1. Try parsing standard OpenTelemetry OTLP payload using UseNumber() to preserve 64-bit nanosecond precision
 		var otlp otlpPayload
-		if err := json.Unmarshal(bodyBytes, &otlp); err == nil && len(otlp.ResourceSpans) > 0 {
+		dec := json.NewDecoder(bytes.NewReader(bodyBytes))
+		dec.UseNumber()
+		if err := dec.Decode(&otlp); err == nil && len(otlp.ResourceSpans) > 0 {
 			tracesToSave = parseOTLPPayload(otlp)
 		}
 
 		// 2. If not OTLP, try single SentriX TraceDetail
 		if len(tracesToSave) == 0 {
 			var single TraceDetail
-			if err := json.Unmarshal(bodyBytes, &single); err == nil && (single.TraceID != "" || len(single.Spans) > 0) {
+			decSingle := json.NewDecoder(bytes.NewReader(bodyBytes))
+			decSingle.UseNumber()
+			if err := decSingle.Decode(&single); err == nil && (single.TraceID != "" || len(single.Spans) > 0) {
 				if single.TraceID == "" {
 					single.TraceID = "trc_" + uuid.New().String()[:12]
 				}
@@ -532,7 +567,9 @@ func HandleIngestTraces(pool *pgxpool.Pool) http.HandlerFunc {
 		// 3. Try slice of TraceDetail
 		if len(tracesToSave) == 0 {
 			var slice []TraceDetail
-			if err := json.Unmarshal(bodyBytes, &slice); err == nil && len(slice) > 0 {
+			decSlice := json.NewDecoder(bytes.NewReader(bodyBytes))
+			decSlice.UseNumber()
+			if err := decSlice.Decode(&slice); err == nil && len(slice) > 0 {
 				tracesToSave = slice
 			}
 		}

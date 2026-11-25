@@ -80,7 +80,7 @@ static SSL_CTX *get_ssl_context(void) {
 }
 #endif
 
-void build_telemetry_json(char *buffer, size_t size, const char *agent_id, uint64_t seq, const SystemMetrics *m) {
+void build_telemetry_json(char *buffer, size_t size, const char *agent_id, uint64_t seq, const char *restart_nonce, const SystemMetrics *m) {
     if (!buffer || size == 0) return;
 
     time_t now = time(NULL);
@@ -92,6 +92,9 @@ void build_telemetry_json(char *buffer, size_t size, const char *agent_id, uint6
     cJSON_AddStringToObject(root, "agent_id", agent_id ? agent_id : "");
     cJSON_AddStringToObject(root, "timestamp", timestamp);
     cJSON_AddNumberToObject(root, "sequence", (double)seq);
+    if (restart_nonce && restart_nonce[0] != '\0') {
+        cJSON_AddStringToObject(root, "restart_nonce", restart_nonce);
+    }
 
     cJSON *metrics = cJSON_AddArrayToObject(root, "metrics");
 

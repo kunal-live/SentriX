@@ -223,9 +223,9 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 
 			// Allow agent restart sequence reset strictly at sequence == 1 when moving forward in time
-			// and (if a restart_nonce is tracked) with a fresh restart nonce.
-			nonceAllowed := lastNonce == "" || (payload.RestartNonce != "" && payload.RestartNonce != lastNonce)
-			allowReset := (lastTelemetryAt == nil) || (payload.Sequence == 1 && payload.Timestamp.After(*lastTelemetryAt) && nonceAllowed)
+			// and presenting a fresh, non-empty restart_nonce distinct from last_restart_nonce.
+			allowReset := (lastTelemetryAt == nil) ||
+				(payload.Sequence == 1 && payload.Timestamp.After(*lastTelemetryAt) && payload.RestartNonce != "" && payload.RestartNonce != lastNonce)
 
 			if !allowReset {
 				selfmetrics.Global().IngestFailures.Add(1)

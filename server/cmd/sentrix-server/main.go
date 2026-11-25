@@ -113,7 +113,6 @@ func main() {
 					}
 
 					logs.StartLiveCollectors(context.Background(), pool)
-					traces.SeedTracesDB(context.Background(), pool)
 				} else {
 					p.Close()
 				}
@@ -219,7 +218,7 @@ func main() {
 			r.Get("/downloads/agent", agents.HandleDownloadAgent())
 			r.Get("/kubernetes/daemonset.yaml", containers.HandleServeK8sDaemonSet())
 
-			// Agent-authenticated telemetry, K8s, container & APM ingestion endpoints
+			// Agent-only telemetry & synthetic checks endpoints
 			r.Group(func(r chi.Router) {
 				r.Use(metrics.AgentAuthMiddleware(pool))
 				r.Post("/agent/telemetry", metrics.HandleTelemetry(pool))
@@ -227,9 +226,18 @@ func main() {
 				r.Post("/telemetry/batch", metrics.HandleBatchTelemetry(pool))
 				r.Get("/agent/checks", checks.HandleAgentChecks(pool))
 				r.Post("/agent/check-results", checks.HandleAgentCheckResults(pool))
+			})
+
+			// Telemetry ingestion endpoints (authenticated via Agent credential OR User JWT)
+			r.Group(func(r chi.Router) {
+				r.Use(metrics.IngestAuthMiddleware(pool))
 				r.Post("/kubernetes/ingest", containers.HandleIngestK8sMetrics(pool))
 				r.Post("/containers/ingest", containers.HandleIngestContainerMetrics(pool))
 				r.Post("/apm/metrics", services.HandleIngestAPMMetrics(pool))
+				r.Post("/services/{serviceID}/apm", services.HandleIngestServiceAPM(pool))
+				r.Post("/traces", traces.HandleIngestTraces(pool))
+				r.Post("/otlp/v1/traces", traces.HandleIngestTraces(pool))
+				r.Post("/v1/traces", traces.HandleIngestTraces(pool))
 			})
 
 			// Authenticated user routes
@@ -251,8 +259,6 @@ func main() {
 				// Services & Infrastructure catalog
 				r.Get("/services", services.HandleListServices(pool))
 				r.Post("/services", services.HandleCreateService(pool))
-				r.Post("/services/{serviceID}/apm", services.HandleIngestServiceAPM(pool))
-				r.Post("/apm/metrics", services.HandleIngestAPMMetrics(pool))
 				r.Get("/infrastructure", services.HandleGetInfrastructure(pool))
 
 				// Centralized Structured Logs
@@ -260,12 +266,9 @@ func main() {
 				r.Get("/logs/services", logs.HandleGetServices(pool))
 				r.Post("/logs/batch", logs.HandleBatchLogs(pool))
 
-				// Distributed Tracing & OpenTelemetry
+				// Distributed Tracing & OpenTelemetry (read)
 				r.Get("/traces", traces.HandleListTraces(pool))
 				r.Get("/traces/{traceID}", traces.HandleGetTrace(pool))
-				r.Post("/traces", traces.HandleIngestTraces(pool))
-				r.Post("/otlp/v1/traces", traces.HandleIngestTraces(pool))
-				r.Post("/v1/traces", traces.HandleIngestTraces(pool))
 
 				// Service Dependency Map & Synthetics
 				r.Get("/service-map", servicemap.HandleGetServiceMap(pool))
@@ -306,13 +309,11 @@ func main() {
 				r.Post("/agents/{agentID}/reactivate", agents.HandleReactivateAgent(pool))
 				r.Post("/agents/{agentID}/revoke", agents.HandleRevokeAgent(pool))
 
-				// Containers & Kubernetes
+				// Containers & Kubernetes (read)
 				r.Get("/containers", containers.HandleListContainers(pool))
-				r.Post("/containers/ingest", containers.HandleIngestContainerMetrics(pool))
 				r.Get("/kubernetes/overview", containers.HandleGetK8sOverview(pool))
 				r.Get("/kubernetes/nodes", containers.HandleGetK8sNodes(pool))
 				r.Get("/kubernetes/workloads", containers.HandleGetK8sWorkloads(pool))
-				r.Post("/kubernetes/ingest", containers.HandleIngestK8sMetrics(pool))
 
 				// Operational Runbooks & Safe Automation
 				r.Get("/runbooks", automation.HandleListRunbooks(pool))
@@ -427,6 +428,7 @@ func main() {
 		go servers.StartStatusMonitor(ctx, pool)
 	} else {
 		slog.Warn("Database not connected; running in Standalone Demo Mode with live simulation!")
+		traces.EnableDemoMode()
 
 		r.Route("/api/v1", func(apiRouter chi.Router) {
 			demo.RegisterDemoRoutes(apiRouter, bus, hub, ticketStore)

@@ -671,6 +671,8 @@ func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 
 		if pool != nil {
 			ctx := r.Context()
+			agentID, isAgent := ctx.Value("agent_id").(string)
+
 			ov, nodes, deps, pods, events, err := loadLatestK8sCluster(ctx, pool)
 			if err != nil {
 				slog.Error("failed to load cluster state for ingest", "error", err)
@@ -678,6 +680,19 @@ func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 				return
 			}
 			applyK8sIngest(&ov, &nodes, &deps, &pods, &events, payload)
+
+			// Verify cluster ownership binding: an agent cannot overwrite a cluster owned by a different agent.
+			var existingOwner *string
+			ownerErr := pool.QueryRow(ctx, `SELECT owner_agent_id::text FROM k8s_clusters WHERE cluster_name = $1`, ov.ClusterName).Scan(&existingOwner)
+			if ownerErr == nil && isAgent && existingOwner != nil && *existingOwner != agentID {
+				http.Error(w, `{"error":"forbidden: cluster owned by another agent"}`, http.StatusForbidden)
+				return
+			}
+
+			var ownerParam any
+			if isAgent && agentID != "" {
+				ownerParam = agentID
+			}
 
 			nodesJSON, _ := json.Marshal(nodes)
 			depsJSON, _ := json.Marshal(deps)
@@ -689,9 +704,9 @@ func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 					cluster_name, version, status, total_nodes, ready_nodes,
 					total_pods, running_pods, pending_pods, failed_pods,
 					total_cpu_milli, allocated_cpu_milli, total_memory_bytes, allocated_memory_bytes,
-					is_live_collector, last_sync_at, nodes, deployments, pods, events
+					is_live_collector, last_sync_at, nodes, deployments, pods, events, owner_agent_id
 				) VALUES (
-					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20
 				)
 				ON CONFLICT (cluster_name) DO UPDATE SET
 					version = EXCLUDED.version,
@@ -711,12 +726,13 @@ func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 					nodes = EXCLUDED.nodes,
 					deployments = EXCLUDED.deployments,
 					pods = EXCLUDED.pods,
-					events = EXCLUDED.events
+					events = EXCLUDED.events,
+					owner_agent_id = COALESCE(k8s_clusters.owner_agent_id, EXCLUDED.owner_agent_id)
 			`,
 				ov.ClusterName, ov.Version, ov.Status, ov.TotalNodes, ov.ReadyNodes,
 				ov.TotalPods, ov.RunningPods, ov.PendingPods, ov.FailedPods,
 				ov.TotalCPUMilli, ov.AllocatedCPUMilli, int64(ov.TotalMemoryBytes), int64(ov.AllocatedMemoryBytes),
-				true, ov.LastSyncAt, nodesJSON, depsJSON, podsJSON, eventsJSON,
+				true, ov.LastSyncAt, nodesJSON, depsJSON, podsJSON, eventsJSON, ownerParam,
 			)
 			if err != nil {
 				slog.Error("failed to persist k8s cluster state", "error", err)
