@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sentrix/server/internal/notifications"
+	"github.com/sentrix/server/internal/realtime"
 )
 
 type checkSettings struct {
@@ -113,6 +114,7 @@ func ProcessResult(
 	}
 
 	now := time.Now()
+	prevState := state
 	notifyFiring := false
 	notifyResolved := false
 
@@ -187,6 +189,10 @@ func ProcessResult(
 
 	if err := tx.Commit(ctx); err != nil {
 		return err
+	}
+
+	if state != prevState {
+		realtime.PublishCheckUpdated(checkID, serverID, state)
 	}
 
 	if notifyFiring {

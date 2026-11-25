@@ -77,3 +77,16 @@ func PublishAlertStateChanged(ruleID string, serverID string, state string) {
 		},
 	})
 }
+
+func PublishServerStatusChanged(serverID string, name string, oldStatus string, newStatus string) {
+	Publish(Event{
+		Type:      "server.status_changed",
+		Timestamp: time.Now().UTC(),
+		Payload: map[string]any{
+			"server_id":  serverID,
+			"name":       name,
+			"old_status": oldStatus,
+			"new_status": newStatus,
+		},
+	})
+}

@@ -234,6 +234,13 @@ int main(int argc, char *argv[]) {
     char json_buffer[2048];
     SystemMetrics metrics;
 
+    typedef enum {
+        AGENT_STATE_ONLINE = 0,
+        AGENT_STATE_SPOOLING = 1,
+        AGENT_STATE_DRAINING = 2
+    } AgentTransportState;
+    AgentTransportState transport_state = (spool_buf.items_queued > 0) ? AGENT_STATE_DRAINING : AGENT_STATE_ONLINE;
+
     while (1) {
         printf("Collecting metrics (seq %lu)...\n", (unsigned long)sequence);
 
@@ -247,6 +254,10 @@ int main(int argc, char *argv[]) {
         build_telemetry_json(json_buffer, sizeof(json_buffer), config.agent_id, sequence, &metrics);
 
         // 1. Drain offline spool buffer if connected
+        if (spool_buf.items_queued > 0 && transport_state != AGENT_STATE_DRAINING) {
+            transport_state = AGENT_STATE_DRAINING;
+            printf("[State] Transition -> DRAINING_BUFFER (%d queued frames)\n", spool_buf.items_queued);
+        }
         while (spool_buf.items_queued > 0) {
             char spooled_json[4096];
             size_t spooled_len = 0;
@@ -255,6 +266,10 @@ int main(int argc, char *argv[]) {
                     printf("[Spool] Drained queued metric frame (%d remaining)\n", spool_buf.items_queued - 1);
                     buffer_pop(&spool_buf);
                 } else {
+                    if (transport_state != AGENT_STATE_SPOOLING) {
+                        transport_state = AGENT_STATE_SPOOLING;
+                        printf("[State] Transition -> OFFLINE_SPOOLING\n");
+                    }
                     printf("[Spool] Connection not ready to drain queue. Retrying next cycle.\n");
                     break;
                 }
@@ -265,8 +280,16 @@ int main(int argc, char *argv[]) {
 
         // 2. Transmit current telemetry frame or buffer on network partition
         if (send_telemetry(config.server_host, config.server_port, "/api/v1/agent/telemetry", json_buffer, config.auth_token) == 0) {
+            if (transport_state != AGENT_STATE_ONLINE) {
+                transport_state = AGENT_STATE_ONLINE;
+                printf("[State] Transition -> ONLINE_STREAMING\n");
+            }
             printf("Telemetry sent successfully.\n");
         } else {
+            if (transport_state != AGENT_STATE_SPOOLING) {
+                transport_state = AGENT_STATE_SPOOLING;
+                printf("[State] Transition -> OFFLINE_SPOOLING\n");
+            }
             printf("Telemetry dispatch failed. Spooling frame to local buffer...\n");
             if (buffer_push(&spool_buf, json_buffer, strlen(json_buffer)) == 0) {
                 printf("[Spool] Frame spooled successfully (%d items in queue, %zu bytes).\n",

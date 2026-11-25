@@ -408,6 +408,7 @@ func main() {
 		// Background workers
 		go alerts.StartEngine(ctx, pool)
 		go notifications.StartWorker(ctx, pool)
+		go servers.StartStatusMonitor(ctx, pool)
 	} else {
 		slog.Warn("TimescaleDB not reachable at localhost:5432; running in Standalone Demo Mode with live simulation!")
 		slog.Info("Default credentials: admin@sentrix.local / admin12345")

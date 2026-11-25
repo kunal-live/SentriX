@@ -29,8 +29,12 @@ func CheckLoginLocked(ctx context.Context, pool *pgxpool.Pool, email string) err
 		return err
 	}
 
-	if lockedUntil != nil && time.Now().Before(*lockedUntil) {
-		return ErrAccountLocked
+	if lockedUntil != nil {
+		if time.Now().Before(*lockedUntil) {
+			return ErrAccountLocked
+		}
+		// Lockout window has expired; transition back to NORMAL state cleanly
+		_ = ResetLoginFailures(ctx, pool, email)
 	}
 
 	return nil

@@ -8,9 +8,27 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sentrix/server/internal/auth"
 )
+
+// ValidExecutionTransitions defines the explicit runbook execution state machine.
+var ValidExecutionTransitions = map[string][]string{
+	"PENDING_APPROVAL": {"RUNNING", "COMPLETED", "FAILED"},
+	"RUNNING":          {"COMPLETED", "FAILED"},
+	"COMPLETED":        {},
+	"FAILED":           {},
+}
+
+func CanTransitionExecution(from, to string) bool {
+	for _, allowed := range ValidExecutionTransitions[from] {
+		if allowed == to {
+			return true
+		}
+	}
+	return false
+}
 
 type RunbookStep struct {
 	ID             string `json:"id"`
@@ -226,9 +244,21 @@ func HandleExecuteRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 			StepResults:  stepResults,
 		}
 
-		automationMu.Lock()
-		executions = append([]*RunbookExecution{exec}, executions...)
-		automationMu.Unlock()
+		if pool != nil {
+			stepsJSON, _ := json.Marshal(stepResults)
+			_, err := pool.Exec(r.Context(), `
+				INSERT INTO automation_executions (id, runbook_id, runbook_title, triggered_by, status, started_at, completed_at, step_results)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			`, exec.ID, exec.RunbookID, exec.RunbookTitle, exec.TriggeredBy, exec.Status, exec.StartedAt, exec.CompletedAt, stepsJSON)
+			if err != nil {
+				http.Error(w, "failed to persist runbook execution", http.StatusInternalServerError)
+				return
+			}
+		} else {
+			automationMu.Lock()
+			executions = append([]*RunbookExecution{exec}, executions...)
+			automationMu.Unlock()
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
@@ -246,22 +276,72 @@ func HandleApproveExecution(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		execID := chi.URLParam(r, "execID")
+		now := time.Now().UTC()
+		approvalSteps := []string{
+			"[Approval] Operator authorization granted by " + actor.Email + ". Proceeding with execution.",
+			"[Execution] Executed safe parameterized action steps with zero errors.",
+			"[Verification] Post-execution verification probe succeeded. Operational state normal.",
+		}
+
+		if pool != nil {
+			ctx := r.Context()
+			var ex RunbookExecution
+			var existingStepsJSON []byte
+			err := pool.QueryRow(ctx, `
+				SELECT id, runbook_id, runbook_title, triggered_by, status, started_at, completed_at, step_results
+				FROM automation_executions
+				WHERE id = $1
+			`, execID).Scan(&ex.ID, &ex.RunbookID, &ex.RunbookTitle, &ex.TriggeredBy, &ex.Status, &ex.StartedAt, &ex.CompletedAt, &existingStepsJSON)
+			if err == pgx.ErrNoRows {
+				http.Error(w, "execution not found", http.StatusNotFound)
+				return
+			} else if err != nil {
+				http.Error(w, "database error", http.StatusInternalServerError)
+				return
+			}
+
+			if !CanTransitionExecution(ex.Status, "COMPLETED") {
+				http.Error(w, "execution cannot be approved from status "+ex.Status, http.StatusConflict)
+				return
+			}
+
+			_ = json.Unmarshal(existingStepsJSON, &ex.StepResults)
+			ex.StepResults = append(ex.StepResults, approvalSteps...)
+			updatedStepsJSON, _ := json.Marshal(ex.StepResults)
+
+			tag, err := pool.Exec(ctx, `
+				UPDATE automation_executions
+				SET status = 'COMPLETED', completed_at = $2, step_results = $3
+				WHERE id = $1 AND status = 'PENDING_APPROVAL'
+			`, execID, now, updatedStepsJSON)
+			if err != nil {
+				http.Error(w, "database update failed", http.StatusInternalServerError)
+				return
+			}
+			if tag.RowsAffected() == 0 {
+				http.Error(w, "execution state changed concurrently", http.StatusConflict)
+				return
+			}
+
+			ex.Status = "COMPLETED"
+			ex.CompletedAt = &now
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(ex)
+			return
+		}
 
 		automationMu.Lock()
 		defer automationMu.Unlock()
 
 		for _, ex := range executions {
 			if ex.ID == execID {
-				if ex.Status == "PENDING_APPROVAL" {
-					now := time.Now().UTC()
-					ex.Status = "COMPLETED"
-					ex.CompletedAt = &now
-					ex.StepResults = append(ex.StepResults,
-						"[Approval] Operator authorization granted by "+actor.Email+". Proceeding with execution.",
-						"[Execution] Executed safe parameterized action steps with zero errors.",
-						"[Verification] Post-execution verification probe succeeded. Operational state normal.",
-					)
+				if !CanTransitionExecution(ex.Status, "COMPLETED") {
+					http.Error(w, "execution cannot be approved from status "+ex.Status, http.StatusConflict)
+					return
 				}
+				ex.Status = "COMPLETED"
+				ex.CompletedAt = &now
+				ex.StepResults = append(ex.StepResults, approvalSteps...)
 				w.Header().Set("Content-Type", "application/json")
 				json.NewEncoder(w).Encode(ex)
 				return
@@ -275,6 +355,30 @@ func HandleApproveExecution(pool *pgxpool.Pool) http.HandlerFunc {
 // GET /api/v1/automation/executions
 func HandleListExecutions(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if pool != nil {
+			rows, err := pool.Query(r.Context(), `
+				SELECT id, runbook_id, runbook_title, triggered_by, status, started_at, completed_at, step_results
+				FROM automation_executions
+				ORDER BY started_at DESC
+				LIMIT 100
+			`)
+			if err == nil {
+				defer rows.Close()
+				dbExecs := []*RunbookExecution{}
+				for rows.Next() {
+					var ex RunbookExecution
+					var stepsJSON []byte
+					if scanErr := rows.Scan(&ex.ID, &ex.RunbookID, &ex.RunbookTitle, &ex.TriggeredBy, &ex.Status, &ex.StartedAt, &ex.CompletedAt, &stepsJSON); scanErr == nil {
+						_ = json.Unmarshal(stepsJSON, &ex.StepResults)
+						dbExecs = append(dbExecs, &ex)
+					}
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(dbExecs)
+				return
+			}
+		}
+
 		automationMu.RLock()
 		defer automationMu.RUnlock()
 

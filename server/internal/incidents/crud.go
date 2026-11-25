@@ -157,8 +157,8 @@ func HandleUpdateIncident(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		defer tx.Rollback(ctx)
 
-		var serverID string
-		err = tx.QueryRow(ctx, `SELECT server_id FROM incidents WHERE id = $1`, incidentID).Scan(&serverID)
+		var serverID, currentStatus string
+		err = tx.QueryRow(ctx, `SELECT server_id, status FROM incidents WHERE id = $1`, incidentID).Scan(&serverID, &currentStatus)
 		if err != nil {
 			api.RespondError(w, r, http.StatusNotFound, "INCIDENT_NOT_FOUND", "Incident not found")
 			return
@@ -177,9 +177,19 @@ func HandleUpdateIncident(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		if req.Status != nil {
 			statusUpper := strings.ToUpper(strings.TrimSpace(*req.Status))
-			switch statusUpper {
-			case "OPEN", "ACKNOWLEDGED", "INVESTIGATING", "RESOLVED":
-				_, _ = tx.Exec(ctx, `UPDATE incidents SET status = $2, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper)
+			if statusUpper != currentStatus {
+				if err := ValidateTransition(currentStatus, statusUpper); err != nil {
+					api.RespondError(w, r, http.StatusConflict, "INVALID_STATE", err.Error())
+					return
+				}
+				switch statusUpper {
+				case "RESOLVED":
+					_, _ = tx.Exec(ctx, `UPDATE incidents SET status = $2, resolved_at = NOW(), resolved_by = $3, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper, actor.ID)
+				case "ACKNOWLEDGED":
+					_, _ = tx.Exec(ctx, `UPDATE incidents SET status = $2, acknowledged_at = NOW(), acknowledged_by = $3, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper, actor.ID)
+				default:
+					_, _ = tx.Exec(ctx, `UPDATE incidents SET status = $2, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper)
+				}
 				_ = WriteTimelineTx(ctx, tx, incidentID, &actor.ID, statusUpper, "Status transitioned to "+statusUpper+" by "+actor.Email)
 			}
 		}

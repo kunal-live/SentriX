@@ -149,14 +149,15 @@ func processServerValue(ctx context.Context, pool *pgxpool.Pool, rule engineRule
 
 	var state string
 	var firstBreach *time.Time
+	var lastEvalAt *time.Time
 	var cooldownUntil *time.Time
 	var incidentID *string
 
 	err := pool.QueryRow(ctx, `
-		SELECT state, first_breach_at, cooldown_until, incident_id
+		SELECT state, first_breach_at, last_eval_at, cooldown_until, incident_id
 		FROM alert_states
 		WHERE rule_id = $1 AND server_id = $2
-	`, rule.ID, serverID).Scan(&state, &firstBreach, &cooldownUntil, &incidentID)
+	`, rule.ID, serverID).Scan(&state, &firstBreach, &lastEvalAt, &cooldownUntil, &incidentID)
 
 	if err == pgx.ErrNoRows {
 		state = "OK"
@@ -184,6 +185,18 @@ func processServerValue(ctx context.Context, pool *pgxpool.Pool, rule engineRule
 
 		case "PENDING":
 			if firstBreach == nil {
+				upsertState(ctx, pool, rule.ID, serverID, "PENDING", &now, value, nil, cooldownUntil)
+				return
+			}
+
+			// Guard: If the alert engine experienced a cold restart or long gap since last_eval_at,
+			// reset the PENDING window instead of firing immediately on a stale timestamp.
+			staleThreshold := 2 * time.Duration(rule.ForSeconds) * time.Second
+			if staleThreshold < 2*time.Minute {
+				staleThreshold = 2 * time.Minute
+			}
+			if lastEvalAt != nil && now.Sub(*lastEvalAt) > staleThreshold {
+				slog.Info("resetting stale PENDING alert window after evaluation gap", "rule", rule.Name, "server_id", serverID)
 				upsertState(ctx, pool, rule.ID, serverID, "PENDING", &now, value, nil, cooldownUntil)
 				return
 			}
