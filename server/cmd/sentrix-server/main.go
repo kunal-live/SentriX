@@ -346,6 +346,7 @@ func main() {
 
 				// Phase 21: Advanced Database & Network Diagnostics
 				r.Get("/databases/postgres", databases.HandleGetPostgresDiagnostics(pool))
+				r.Post("/databases/slow-queries/ingest", databases.HandleIngestSlowQueries(pool))
 				r.Get("/network/diagnostics", network.HandleGetNetworkDiagnostics(pool))
 
 				// Phase 23: Compliance, Disaster Recovery & SBOM

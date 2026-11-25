@@ -1917,6 +1917,7 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 
 		// Phase 21: Advanced Database & Network Diagnostics
 		r.Get("/databases/postgres", databases.HandleGetPostgresDiagnostics(nil))
+		r.Post("/databases/slow-queries/ingest", databases.HandleIngestSlowQueries(nil))
 		r.Get("/network/diagnostics", network.HandleGetNetworkDiagnostics(nil))
 
 		// Phase 23: Compliance, Disaster Recovery & SBOM
