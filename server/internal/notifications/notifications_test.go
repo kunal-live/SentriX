@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -34,24 +35,11 @@ func TestMaskWebhookURL(t *testing.T) {
 		t.Errorf("Expected URL to be masked, got original %s", masked)
 	}
 
-	if contains(masked, "supersecret123") {
+	if strings.Contains(masked, "supersecret123") {
 		t.Errorf("Masked URL leaked query parameter token: %s", masked)
 	}
 
-	if contains(masked, "token987654321") {
+	if strings.Contains(masked, "token987654321") {
 		t.Errorf("Masked URL leaked path token: %s", masked)
 	}
-}
-
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(substr) > 0 && findSubstr(s, substr))
-}
-
-func findSubstr(s, substr string) bool {
-	for i := 0; i+len(substr) <= len(s); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

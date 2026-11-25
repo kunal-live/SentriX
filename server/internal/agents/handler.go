@@ -5,7 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"net"
 	"net/http"
 	"os"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sentrix/server/internal/auth"
+	"github.com/sentrix/server/internal/security"
 )
 
 type EnrollmentRequest struct {
@@ -60,15 +60,6 @@ func generateRawToken(prefix string) (string, error) {
 	}
 
 	return prefix + "_" + base64.RawURLEncoding.EncodeToString(raw), nil
-}
-
-func remoteIP(r *http.Request) string {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-
-	return host
 }
 
 func publicServerURL(r *http.Request) string {
@@ -322,7 +313,7 @@ func HandleEnroll(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 
 		serverID := uuid.New()
-		ip := remoteIP(r)
+		ip := security.ClientIP(r)
 
 		_, err = tx.Exec(ctx, `
 			INSERT INTO servers (

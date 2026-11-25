@@ -282,8 +282,14 @@ func HandleGetIncident(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
-// POST /api/v1/incidents/{incidentID}/ack
-func HandleAcknowledge(pool *pgxpool.Pool) http.HandlerFunc {
+func handleIncidentTransition(
+	pool *pgxpool.Pool,
+	targetStatus string,
+	updateSQL string,
+	timelineMsgPrefix string,
+	auditAction string,
+	errVerb string,
+) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		incidentID := chi.URLParam(r, "incidentID")
 		if _, err := uuid.Parse(incidentID); err != nil {
@@ -300,12 +306,10 @@ func HandleAcknowledge(pool *pgxpool.Pool) http.HandlerFunc {
 		var req struct {
 			Message string `json:"message"`
 		}
-
 		_ = json.NewDecoder(r.Body).Decode(&req)
 		note := strings.TrimSpace(req.Message)
 
 		ctx := r.Context()
-
 		tx, err := pool.Begin(ctx)
 		if err != nil {
 			http.Error(w, "database error", http.StatusInternalServerError)
@@ -313,60 +317,29 @@ func HandleAcknowledge(pool *pgxpool.Pool) http.HandlerFunc {
 		}
 		defer tx.Rollback(ctx)
 
-		var serverID string
-		var title string
-
-		err = tx.QueryRow(ctx, `
-			UPDATE incidents
-			SET
-				status = 'ACKNOWLEDGED',
-				acknowledged_at = NOW(),
-				acknowledged_by = $2
-			WHERE id = $1
-			  AND status IN ('OPEN', 'INVESTIGATING')
-			RETURNING server_id, title
-		`, incidentID, actor.ID).Scan(&serverID, &title)
-
+		var serverID, title string
+		err = tx.QueryRow(ctx, updateSQL, incidentID, actor.ID).Scan(&serverID, &title)
 		if err == pgx.ErrNoRows {
 			var currentStatus string
-
-			err := tx.QueryRow(ctx, `
-				SELECT status
-				FROM incidents
-				WHERE id = $1
-			`, incidentID).Scan(&currentStatus)
-
-			if err != nil {
+			if err := tx.QueryRow(ctx, `SELECT status FROM incidents WHERE id = $1`, incidentID).Scan(&currentStatus); err != nil {
 				http.Error(w, "incident not found", http.StatusNotFound)
 				return
 			}
-
-			http.Error(w, "incident cannot be acknowledged from status "+currentStatus, http.StatusConflict)
+			http.Error(w, "incident cannot be "+errVerb+" from status "+currentStatus, http.StatusConflict)
 			return
 		}
-
 		if err != nil {
 			http.Error(w, "database update failed", http.StatusInternalServerError)
 			return
 		}
 
-		err = WriteTimelineTx(
-			ctx,
-			tx,
-			incidentID,
-			&actor.ID,
-			"ACKNOWLEDGED",
-			"Incident acknowledged by "+actor.Email,
-		)
-
-		if err != nil {
+		if err := WriteTimelineTx(ctx, tx, incidentID, &actor.ID, targetStatus, timelineMsgPrefix+actor.Email); err != nil {
 			http.Error(w, "failed to write timeline event", http.StatusInternalServerError)
 			return
 		}
 
 		if note != "" {
-			err = addCommentTx(ctx, tx, incidentID, actor.ID, note)
-			if err != nil {
+			if err := addCommentTx(ctx, tx, incidentID, actor.ID, note); err != nil {
 				http.Error(w, "failed to add comment", http.StatusInternalServerError)
 				return
 			}
@@ -377,143 +350,36 @@ func HandleAcknowledge(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		auth.WriteAudit(
-			ctx,
-			pool,
-			&actor.ID,
-			"incident.acknowledge",
-			"incident",
-			incidentID,
-			auth.ClientIP(r),
-			map[string]any{
-				"title": title,
-			},
-		)
-
+		auth.WriteAudit(ctx, pool, &actor.ID, auditAction, "incident", incidentID, auth.ClientIP(r), map[string]any{"title": title})
 		realtime.PublishIncidentUpdated(incidentID, serverID)
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
-			"status": "ACKNOWLEDGED",
-		})
+		json.NewEncoder(w).Encode(map[string]string{"status": targetStatus})
 	}
+}
+
+// POST /api/v1/incidents/{incidentID}/ack
+func HandleAcknowledge(pool *pgxpool.Pool) http.HandlerFunc {
+	return handleIncidentTransition(
+		pool,
+		"ACKNOWLEDGED",
+		`UPDATE incidents SET status = 'ACKNOWLEDGED', acknowledged_at = NOW(), acknowledged_by = $2 WHERE id = $1 AND status IN ('OPEN', 'INVESTIGATING') RETURNING server_id, title`,
+		"Incident acknowledged by ",
+		"incident.acknowledge",
+		"acknowledged",
+	)
 }
 
 // POST /api/v1/incidents/{incidentID}/resolve
 func HandleResolve(pool *pgxpool.Pool) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		incidentID := chi.URLParam(r, "incidentID")
-		if _, err := uuid.Parse(incidentID); err != nil {
-			http.Error(w, "invalid incident ID format", http.StatusBadRequest)
-			return
-		}
-
-		actor := auth.GetUser(r)
-		if actor == nil {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-
-		var req struct {
-			Message string `json:"message"`
-		}
-
-		_ = json.NewDecoder(r.Body).Decode(&req)
-		note := strings.TrimSpace(req.Message)
-
-		ctx := r.Context()
-
-		tx, err := pool.Begin(ctx)
-		if err != nil {
-			http.Error(w, "database error", http.StatusInternalServerError)
-			return
-		}
-		defer tx.Rollback(ctx)
-
-		var serverID string
-		var title string
-
-		err = tx.QueryRow(ctx, `
-			UPDATE incidents
-			SET
-				status = 'RESOLVED',
-				resolved_at = NOW(),
-				resolved_by = $2
-			WHERE id = $1
-			  AND status IN ('OPEN', 'ACKNOWLEDGED', 'INVESTIGATING')
-			RETURNING server_id, title
-		`, incidentID, actor.ID).Scan(&serverID, &title)
-
-		if err == pgx.ErrNoRows {
-			var currentStatus string
-
-			err := tx.QueryRow(ctx, `
-				SELECT status
-				FROM incidents
-				WHERE id = $1
-			`, incidentID).Scan(&currentStatus)
-
-			if err != nil {
-				http.Error(w, "incident not found", http.StatusNotFound)
-				return
-			}
-
-			http.Error(w, "incident cannot be resolved from status "+currentStatus, http.StatusConflict)
-			return
-		}
-
-		if err != nil {
-			http.Error(w, "database update failed", http.StatusInternalServerError)
-			return
-		}
-
-		err = WriteTimelineTx(
-			ctx,
-			tx,
-			incidentID,
-			&actor.ID,
-			"RESOLVED",
-			"Incident manually resolved by "+actor.Email,
-		)
-
-		if err != nil {
-			http.Error(w, "failed to write timeline event", http.StatusInternalServerError)
-			return
-		}
-
-		if note != "" {
-			err = addCommentTx(ctx, tx, incidentID, actor.ID, note)
-			if err != nil {
-				http.Error(w, "failed to add comment", http.StatusInternalServerError)
-				return
-			}
-		}
-
-		if err := tx.Commit(ctx); err != nil {
-			http.Error(w, "database error", http.StatusInternalServerError)
-			return
-		}
-
-		auth.WriteAudit(
-			ctx,
-			pool,
-			&actor.ID,
-			"incident.resolve",
-			"incident",
-			incidentID,
-			auth.ClientIP(r),
-			map[string]any{
-				"title": title,
-			},
-		)
-
-		realtime.PublishIncidentUpdated(incidentID, serverID)
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{
-			"status": "RESOLVED",
-		})
-	}
+	return handleIncidentTransition(
+		pool,
+		"RESOLVED",
+		`UPDATE incidents SET status = 'RESOLVED', resolved_at = NOW(), resolved_by = $2 WHERE id = $1 AND status IN ('OPEN', 'ACKNOWLEDGED', 'INVESTIGATING') RETURNING server_id, title`,
+		"Incident manually resolved by ",
+		"incident.resolve",
+		"resolved",
+	)
 }
 
 // POST /api/v1/incidents/{incidentID}/comments

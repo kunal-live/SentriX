@@ -307,21 +307,47 @@ func HandleCreateService(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
+type apmMetricsPayload struct {
+	ServiceName   string            `json:"service_name"`
+	RPS           float64           `json:"rps"`
+	LatencyP50Ms  float64           `json:"p50_ms"`
+	LatencyP95Ms  float64           `json:"p95_ms"`
+	LatencyP99Ms  float64           `json:"p99_ms"`
+	ErrorRatePct  float64           `json:"error_rate_pct"`
+	ApdexScore    float64           `json:"apdex_score"`
+	ThroughputMBs float64           `json:"throughput_mb_s"`
+	Endpoints     []ServiceEndpoint `json:"endpoints,omitempty"`
+}
+
+func applyAPMMetrics(target *ServiceEntity, incoming apmMetricsPayload) {
+	if incoming.RPS > 0 {
+		target.RPS = incoming.RPS
+	}
+	if incoming.LatencyP50Ms > 0 {
+		target.LatencyP50Ms = incoming.LatencyP50Ms
+	}
+	if incoming.LatencyP95Ms > 0 {
+		target.LatencyP95Ms = incoming.LatencyP95Ms
+	}
+	if incoming.LatencyP99Ms > 0 {
+		target.LatencyP99Ms = incoming.LatencyP99Ms
+	}
+	target.ErrorRatePct = incoming.ErrorRatePct
+	if incoming.ApdexScore > 0 {
+		target.ApdexScore = incoming.ApdexScore
+	}
+	if incoming.ThroughputMBs > 0 {
+		target.ThroughputMBs = incoming.ThroughputMBs
+	}
+	if len(incoming.Endpoints) > 0 {
+		target.Endpoints = incoming.Endpoints
+	}
+}
+
 // POST /api/v1/apm/metrics
 func HandleIngestAPMMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var incoming struct {
-			ServiceName   string            `json:"service_name"`
-			RPS           float64           `json:"rps"`
-			LatencyP50Ms  float64           `json:"p50_ms"`
-			LatencyP95Ms  float64           `json:"p95_ms"`
-			LatencyP99Ms  float64           `json:"p99_ms"`
-			ErrorRatePct  float64           `json:"error_rate_pct"`
-			ApdexScore    float64           `json:"apdex_score"`
-			ThroughputMBs float64           `json:"throughput_mb_s"`
-			Endpoints     []ServiceEndpoint `json:"endpoints,omitempty"`
-		}
-
+		var incoming apmMetricsPayload
 		if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
 			http.Error(w, `{"error":"invalid_json"}`, http.StatusBadRequest)
 			return
@@ -338,28 +364,7 @@ func HandleIngestAPMMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 		found := false
 		for i := range defaultServices {
 			if strings.EqualFold(defaultServices[i].Name, incoming.ServiceName) || strings.EqualFold(defaultServices[i].ID, incoming.ServiceName) {
-				if incoming.RPS > 0 {
-					defaultServices[i].RPS = incoming.RPS
-				}
-				if incoming.LatencyP50Ms > 0 {
-					defaultServices[i].LatencyP50Ms = incoming.LatencyP50Ms
-				}
-				if incoming.LatencyP95Ms > 0 {
-					defaultServices[i].LatencyP95Ms = incoming.LatencyP95Ms
-				}
-				if incoming.LatencyP99Ms > 0 {
-					defaultServices[i].LatencyP99Ms = incoming.LatencyP99Ms
-				}
-				defaultServices[i].ErrorRatePct = incoming.ErrorRatePct
-				if incoming.ApdexScore > 0 {
-					defaultServices[i].ApdexScore = incoming.ApdexScore
-				}
-				if incoming.ThroughputMBs > 0 {
-					defaultServices[i].ThroughputMBs = incoming.ThroughputMBs
-				}
-				if len(incoming.Endpoints) > 0 {
-					defaultServices[i].Endpoints = incoming.Endpoints
-				}
+				applyAPMMetrics(&defaultServices[i], incoming)
 				found = true
 				break
 			}
@@ -380,19 +385,10 @@ func HandleIngestAPMMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 				ServerCount:   1,
 				IncidentCount: 0,
 				Uptime:        99.95,
-				RPS:           incoming.RPS,
-				LatencyP50Ms:  incoming.LatencyP50Ms,
-				LatencyP95Ms:  incoming.LatencyP95Ms,
-				LatencyP99Ms:  incoming.LatencyP99Ms,
-				ErrorRatePct:  incoming.ErrorRatePct,
-				ApdexScore:    incoming.ApdexScore,
-				ThroughputMBs: incoming.ThroughputMBs,
-				Endpoints:     incoming.Endpoints,
+				ApdexScore:    0.98,
 				CreatedAt:     time.Now().UTC(),
 			}
-			if newSrv.ApdexScore == 0 {
-				newSrv.ApdexScore = 0.98
-			}
+			applyAPMMetrics(&newSrv, incoming)
 			defaultServices = append(defaultServices, newSrv)
 		}
 
@@ -409,17 +405,7 @@ func HandleIngestAPMMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 func HandleIngestServiceAPM(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		serviceID := chi.URLParam(r, "serviceID")
-		var incoming struct {
-			RPS           float64           `json:"rps"`
-			LatencyP50Ms  float64           `json:"p50_ms"`
-			LatencyP95Ms  float64           `json:"p95_ms"`
-			LatencyP99Ms  float64           `json:"p99_ms"`
-			ErrorRatePct  float64           `json:"error_rate_pct"`
-			ApdexScore    float64           `json:"apdex_score"`
-			ThroughputMBs float64           `json:"throughput_mb_s"`
-			Endpoints     []ServiceEndpoint `json:"endpoints,omitempty"`
-		}
-
+		var incoming apmMetricsPayload
 		if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
 			http.Error(w, `{"error":"invalid_json"}`, http.StatusBadRequest)
 			return
@@ -430,28 +416,7 @@ func HandleIngestServiceAPM(pool *pgxpool.Pool) http.HandlerFunc {
 
 		for i := range defaultServices {
 			if defaultServices[i].ID == serviceID || strings.EqualFold(defaultServices[i].Name, serviceID) {
-				if incoming.RPS > 0 {
-					defaultServices[i].RPS = incoming.RPS
-				}
-				if incoming.LatencyP50Ms > 0 {
-					defaultServices[i].LatencyP50Ms = incoming.LatencyP50Ms
-				}
-				if incoming.LatencyP95Ms > 0 {
-					defaultServices[i].LatencyP95Ms = incoming.LatencyP95Ms
-				}
-				if incoming.LatencyP99Ms > 0 {
-					defaultServices[i].LatencyP99Ms = incoming.LatencyP99Ms
-				}
-				defaultServices[i].ErrorRatePct = incoming.ErrorRatePct
-				if incoming.ApdexScore > 0 {
-					defaultServices[i].ApdexScore = incoming.ApdexScore
-				}
-				if incoming.ThroughputMBs > 0 {
-					defaultServices[i].ThroughputMBs = incoming.ThroughputMBs
-				}
-				if len(incoming.Endpoints) > 0 {
-					defaultServices[i].Endpoints = incoming.Endpoints
-				}
+				applyAPMMetrics(&defaultServices[i], incoming)
 				break
 			}
 		}
