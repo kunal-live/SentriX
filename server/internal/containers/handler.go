@@ -100,13 +100,13 @@ type K8sClusterEvent struct {
 }
 
 type K8sIngestPayload struct {
-	ClusterName  string            `json:"cluster_name"`
-	Version      string            `json:"version"`
-	Nodes        []K8sNode         `json:"nodes,omitempty"`
-	Deployments  []K8sDeployment   `json:"deployments,omitempty"`
-	Pods         []K8sPod          `json:"pods,omitempty"`
-	Events       []K8sClusterEvent `json:"events,omitempty"`
-	ReportingNode string           `json:"reporting_node,omitempty"`
+	ClusterName   string            `json:"cluster_name"`
+	Version       string            `json:"version"`
+	Nodes         []K8sNode         `json:"nodes,omitempty"`
+	Deployments   []K8sDeployment   `json:"deployments,omitempty"`
+	Pods          []K8sPod          `json:"pods,omitempty"`
+	Events        []K8sClusterEvent `json:"events,omitempty"`
+	ReportingNode string            `json:"reporting_node,omitempty"`
 }
 
 var (
