@@ -11,6 +11,10 @@ import (
 // GET /install.sh — public, no auth required.
 func HandleInstallScript() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if os.Getenv("SENTRIX_PUBLIC_URL") == "" && !isValidHostHeader(r.Host) {
+			http.Error(w, "invalid Host header", http.StatusBadRequest)
+			return
+		}
 		serverURL := publicServerURL(r)
 
 		script := generateInstallScript(serverURL)

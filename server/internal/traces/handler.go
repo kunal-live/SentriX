@@ -579,6 +579,15 @@ func HandleIngestTraces(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		totalSpans := 0
+		for _, t := range tracesToSave {
+			totalSpans += len(t.Spans)
+		}
+		if len(tracesToSave) > 500 || totalSpans > 2000 {
+			api.RespondError(w, r, http.StatusRequestEntityTooLarge, "BATCH_TOO_LARGE", "max 500 traces / 2000 spans per request")
+			return
+		}
+
 		// Save to PostgreSQL using a single transactional pgx.Batch & update in-memory buffer
 		ctx := r.Context()
 		if pool != nil {

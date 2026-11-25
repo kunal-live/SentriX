@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
@@ -18,6 +19,19 @@ import (
 	"github.com/sentrix/server/internal/realtime"
 	"github.com/sentrix/server/internal/selfmetrics"
 )
+
+type ctxKey string
+
+const (
+	agentIDKey    ctxKey = "agent_id"
+	ingestRoleKey ctxKey = "ingest_role"
+)
+
+// AgentIDFromContext returns the authenticated agent ID from request context.
+func AgentIDFromContext(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(agentIDKey).(string)
+	return id, ok && id != ""
+}
 
 type telemetryLogEvent struct {
 	serverID string
@@ -79,7 +93,7 @@ func AgentAuthMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), "agent_id", agentID)
+			ctx := context.WithValue(r.Context(), agentIDKey, agentID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -102,7 +116,7 @@ func IngestAuthMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 					http.Error(w, "Forbidden: ingestion requires OPERATOR role or above", http.StatusForbidden)
 					return
 				}
-				ctx := context.WithValue(r.Context(), "ingest_role", claims.Role)
+				ctx := context.WithValue(r.Context(), ingestRoleKey, claims.Role)
 				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
@@ -112,7 +126,7 @@ func IngestAuthMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 				hashed := hashCredential(token)
 				var agentID string
 				if err := pool.QueryRow(r.Context(), "SELECT id FROM agents WHERE credential_hash = $1 AND status = 'ACTIVE'", hashed).Scan(&agentID); err == nil {
-					ctx := context.WithValue(r.Context(), "agent_id", agentID)
+					ctx := context.WithValue(r.Context(), agentIDKey, agentID)
 					next.ServeHTTP(w, r.WithContext(ctx))
 					return
 				}
@@ -141,7 +155,7 @@ type Metric struct {
 // POST /api/v1/agent/telemetry
 func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		agentID, ok := r.Context().Value("agent_id").(string)
+		agentID, ok := AgentIDFromContext(r.Context())
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -271,6 +285,11 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 		batch := &pgx.Batch{}
 
 		for _, m := range payload.Metrics {
+			val := m.Value
+			if math.IsNaN(val) || math.IsInf(val, 0) {
+				continue
+			}
+
 			var tableName string
 
 			switch m.Name {
@@ -284,8 +303,14 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 				continue
 			}
 
+			if val < 0 {
+				val = 0
+			} else if val > 100 {
+				val = 100
+			}
+
 			query := "INSERT INTO " + tableName + " (time, server_id, value) VALUES ($1, $2, $3)"
-			batch.Queue(query, payload.Timestamp, serverID, m.Value)
+			batch.Queue(query, payload.Timestamp, serverID, val)
 		}
 
 		batch.Queue(`

@@ -62,6 +62,19 @@ func generateRawToken(prefix string) (string, error) {
 	return prefix + "_" + base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
+func isValidHostHeader(host string) bool {
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	for i := 0; i < len(host); i++ {
+		c := host[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-' || c == ':') {
+			return false
+		}
+	}
+	return true
+}
+
 func publicServerURL(r *http.Request) string {
 	publicURL := os.Getenv("SENTRIX_PUBLIC_URL")
 	if publicURL != "" {
@@ -73,7 +86,12 @@ func publicServerURL(r *http.Request) string {
 		scheme = "https"
 	}
 
-	return scheme + "://" + r.Host
+	host := r.Host
+	if !isValidHostHeader(host) {
+		host = "localhost:8080"
+	}
+
+	return scheme + "://" + host
 }
 
 // POST /api/v1/agents/enrollment-tokens

@@ -47,7 +47,7 @@ func HandleBatchTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		if agentID, ok := r.Context().Value("agent_id").(string); ok && agentID != "" {
+		if agentID, ok := AgentIDFromContext(r.Context()); ok {
 			var authorizedServerID string
 			err := pool.QueryRow(r.Context(), `SELECT id FROM servers WHERE agent_id = $1`, agentID).Scan(&authorizedServerID)
 			if err != nil || authorizedServerID != payload.ServerID {

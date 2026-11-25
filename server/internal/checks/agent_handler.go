@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sentrix/server/internal/logs"
+	"github.com/sentrix/server/internal/metrics"
 )
 
 type agentCheck struct {
@@ -50,7 +51,7 @@ func serverIDFromAgent(ctx context.Context, pool *pgxpool.Pool, agentID string) 
 // GET /api/v1/agent/checks
 func HandleAgentChecks(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		agentID, ok := r.Context().Value("agent_id").(string)
+		agentID, ok := metrics.AgentIDFromContext(r.Context())
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -126,7 +127,7 @@ func HandleAgentChecks(pool *pgxpool.Pool) http.HandlerFunc {
 // POST /api/v1/agent/check-results
 func HandleAgentCheckResults(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		agentID, ok := r.Context().Value("agent_id").(string)
+		agentID, ok := metrics.AgentIDFromContext(r.Context())
 		if !ok {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

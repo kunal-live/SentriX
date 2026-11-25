@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/metrics"
 )
 
 type DockerContainer struct {
@@ -123,8 +124,14 @@ var (
 	liveContainers  []DockerContainer
 )
 
-func init() {
-	seedClusterData()
+// EnableDemoMode seeds static cluster and container telemetry for standalone demo mode.
+func EnableDemoMode() {
+	k8sMu.RLock()
+	alreadySeeded := liveOverview.ClusterName != ""
+	k8sMu.RUnlock()
+	if !alreadySeeded {
+		seedClusterData()
+	}
 }
 
 func seedClusterData() {
@@ -668,10 +675,14 @@ func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 			http.Error(w, `{"error":"invalid_json"}`, http.StatusBadRequest)
 			return
 		}
+		if len(payload.Nodes) > 1000 || len(payload.Pods) > 5000 || len(payload.Events) > 100 || len(payload.Deployments) > 1000 {
+			http.Error(w, `{"error":"batch_too_large"}`, http.StatusRequestEntityTooLarge)
+			return
+		}
 
 		if pool != nil {
 			ctx := r.Context()
-			agentID, isAgent := ctx.Value("agent_id").(string)
+			agentID, isAgent := metrics.AgentIDFromContext(ctx)
 
 			tx, err := pool.Begin(ctx)
 			if err != nil {
@@ -821,10 +832,14 @@ func HandleIngestContainerMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 			http.Error(w, `{"error":"invalid_json"}`, http.StatusBadRequest)
 			return
 		}
+		if len(incoming) > 500 {
+			http.Error(w, `{"error":"batch_too_large"}`, http.StatusRequestEntityTooLarge)
+			return
+		}
 
 		if pool != nil && len(incoming) > 0 {
 			ctx := r.Context()
-			agentID, isAgent := ctx.Value("agent_id").(string)
+			agentID, isAgent := metrics.AgentIDFromContext(ctx)
 			var ownerParam any
 			if isAgent && agentID != "" {
 				ownerParam = agentID

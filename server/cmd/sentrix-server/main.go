@@ -229,8 +229,16 @@ func main() {
 			})
 
 			// Telemetry ingestion endpoints (authenticated via Agent credential OR User JWT)
+			ingestLimiter := security.NewRateLimiter(50, 100)
+			ingestKey := func(r *http.Request) string {
+				if id, ok := metrics.AgentIDFromContext(r.Context()); ok {
+					return "agent:" + id
+				}
+				return security.IPKey(r)
+			}
 			r.Group(func(r chi.Router) {
 				r.Use(metrics.IngestAuthMiddleware(pool))
+				r.Use(security.HTTPRateLimit(ingestLimiter, ingestKey, "ingest rate limit exceeded"))
 				r.Post("/kubernetes/ingest", containers.HandleIngestK8sMetrics(pool))
 				r.Post("/containers/ingest", containers.HandleIngestContainerMetrics(pool))
 				r.Post("/apm/metrics", services.HandleIngestAPMMetrics(pool))
@@ -302,12 +310,8 @@ func main() {
 				r.Get("/incidents/{incidentID}/rca", ai.HandleGetIncidentRCA(pool))
 				r.Post("/incidents/{incidentID}/postmortem-ai", ai.HandleGeneratePostmortemAI(pool))
 
-				// Agent Fleet Management
+				// Agent Fleet Management (read)
 				r.Get("/agents", agents.HandleListAgents(pool))
-				r.Post("/agents/{agentID}/diagnostics", agents.HandleAgentDiagnostics(pool))
-				r.Post("/agents/{agentID}/rotate-credential", agents.HandleRotateCredential(pool))
-				r.Post("/agents/{agentID}/reactivate", agents.HandleReactivateAgent(pool))
-				r.Post("/agents/{agentID}/revoke", agents.HandleRevokeAgent(pool))
 
 				// Containers & Kubernetes (read)
 				r.Get("/containers", containers.HandleListContainers(pool))
@@ -315,12 +319,10 @@ func main() {
 				r.Get("/kubernetes/nodes", containers.HandleGetK8sNodes(pool))
 				r.Get("/kubernetes/workloads", containers.HandleGetK8sWorkloads(pool))
 
-				// Operational Runbooks & Safe Automation
+				// Operational Runbooks & Safe Automation (read)
 				r.Get("/runbooks", automation.HandleListRunbooks(pool))
 				r.Get("/runbooks/{id}", automation.HandleGetRunbook(pool))
-				r.Post("/runbooks/{id}/execute", automation.HandleExecuteRunbook(pool))
 				r.Get("/automation/executions", automation.HandleListExecutions(pool))
-				r.Post("/automation/executions/{execID}/approve", automation.HandleApproveExecution(pool))
 
 				// Integrations Hub & Dead Letter Queue (DLQ)
 				r.Get("/integrations", integrations.HandleListIntegrations(pool))
@@ -383,7 +385,7 @@ func main() {
 				r.Post("/realtime/ticket", realtime.HandleIssueTicket(ticketStore))
 				r.Post("/auth/ws-ticket", realtime.HandleIssueTicket(ticketStore))
 
-				// Operator + Admin: alert rules & silences
+				// Operator + Admin: alert rules, silences, diagnostics, and automation execution
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireRole("ADMIN", "OPERATOR"))
 
@@ -394,9 +396,13 @@ func main() {
 					r.Post("/silences", alerts.HandleCreateSilence(pool))
 					r.Delete("/silences/{silenceID}", alerts.HandleDeleteSilence(pool))
 					r.Get("/audit-logs", auth.HandleGetAuditLogs(pool))
+
+					r.Post("/agents/{agentID}/diagnostics", agents.HandleAgentDiagnostics(pool))
+					r.Post("/runbooks/{id}/execute", automation.HandleExecuteRunbook(pool))
+					r.Post("/automation/executions/{execID}/approve", automation.HandleApproveExecution(pool))
 				})
 
-				// Admin only: server deletion, user management, enrollment tokens, channels
+				// Admin only: server deletion, user management, agent lifecycle, enrollment tokens, channels
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireRole("ADMIN"))
 
@@ -408,6 +414,9 @@ func main() {
 
 					r.Post("/agents/enrollment-tokens", agents.HandleCreateEnrollmentToken(pool))
 					r.Get("/agents/enrollment-tokens", agents.HandleListEnrollmentTokens(pool))
+					r.Post("/agents/{agentID}/rotate-credential", agents.HandleRotateCredential(pool))
+					r.Post("/agents/{agentID}/reactivate", agents.HandleReactivateAgent(pool))
+					r.Post("/agents/{agentID}/revoke", agents.HandleRevokeAgent(pool))
 
 					r.Post("/notifications/channels", notifications.HandleCreateChannel(pool))
 					r.Delete("/notifications/channels/{channelID}", notifications.HandleDeleteChannel(pool))
@@ -429,6 +438,7 @@ func main() {
 	} else {
 		slog.Warn("Database not connected; running in Standalone Demo Mode with live simulation!")
 		traces.EnableDemoMode()
+		containers.EnableDemoMode()
 
 		r.Route("/api/v1", func(apiRouter chi.Router) {
 			demo.RegisterDemoRoutes(apiRouter, bus, hub, ticketStore)

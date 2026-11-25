@@ -224,6 +224,7 @@ func HandleRotateCredential(pool *pgxpool.Pool) http.HandlerFunc {
 			SET
 				credential_hash = $2,
 				credential_rotated_at = NOW(),
+				last_restart_nonce = gen_random_uuid()::text,
 				updated_at = NOW()
 			WHERE id = $1
 			  AND status != 'REVOKED'

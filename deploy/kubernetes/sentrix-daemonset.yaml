@@ -46,9 +46,10 @@ data:
   collector.sh: |
     #!/bin/sh
     set -e
-    SERVER_URL="${SENTRIX_SERVER_URL:-http://169.58.138.136:8080}"
+    SERVER_URL="${SENTRIX_SERVER_URL:-https://sentrix-server.sentrix-system.svc:8080}"
     INTERVAL="${SCRAPE_INTERVAL:-15}"
     KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token 2>/dev/null || echo "")
+    KUBE_CA="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 
     echo "Starting SentriX Kubernetes Collector streaming to: ${SERVER_URL}"
     echo "Node name: ${NODE_NAME}"
@@ -56,11 +57,11 @@ data:
     while true; do
       TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
       
-      # Query Kubelet summary or pods API
-      if [ -n "$KUBE_TOKEN" ]; then
-        PODS_JSON=$(curl -sSk -H "Authorization: Bearer $KUBE_TOKEN" "https://kubernetes.default.svc/api/v1/pods?fieldSelector=spec.nodeName=${NODE_NAME}" 2>/dev/null || echo '{"items":[]}')
-        NODES_JSON=$(curl -sSk -H "Authorization: Bearer $KUBE_TOKEN" "https://kubernetes.default.svc/api/v1/nodes/${NODE_NAME}" 2>/dev/null || echo '{}')
-        EVENTS_JSON=$(curl -sSk -H "Authorization: Bearer $KUBE_TOKEN" "https://kubernetes.default.svc/api/v1/events?limit=25" 2>/dev/null || echo '{"items":[]}')
+      # Query Kubelet summary or pods API with ServiceAccount CA verification
+      if [ -n "$KUBE_TOKEN" ] && [ -f "$KUBE_CA" ]; then
+        PODS_JSON=$(curl -sS --cacert "$KUBE_CA" -H "Authorization: Bearer $KUBE_TOKEN" "https://kubernetes.default.svc/api/v1/pods?fieldSelector=spec.nodeName=${NODE_NAME}" 2>/dev/null || echo '{"items":[]}')
+        NODES_JSON=$(curl -sS --cacert "$KUBE_CA" -H "Authorization: Bearer $KUBE_TOKEN" "https://kubernetes.default.svc/api/v1/nodes/${NODE_NAME}" 2>/dev/null || echo '{}')
+        EVENTS_JSON=$(curl -sS --cacert "$KUBE_CA" -H "Authorization: Bearer $KUBE_TOKEN" "https://kubernetes.default.svc/api/v1/events?limit=25" 2>/dev/null || echo '{"items":[]}')
       fi
 
       # Send telemetry payload to SentriX Server
@@ -76,6 +77,7 @@ data:
 
       curl -s -X POST "${SERVER_URL}/api/v1/kubernetes/ingest" \
         -H "Content-Type: application/json" \
+        -H "Authorization: Bearer ${SENTRIX_INGEST_TOKEN}" \
         -d "$PAYLOAD" >/dev/null 2>&1 || true
 
       sleep "$INTERVAL"
@@ -99,8 +101,8 @@ spec:
         app.kubernetes.io/name: sentrix-collector
     spec:
       serviceAccountName: sentrix-k8s-collector
-      hostNetwork: true
-      hostPID: true
+      hostNetwork: false
+      hostPID: false
       tolerations:
         - operator: Exists
           effect: NoSchedule
@@ -116,7 +118,13 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
             - name: SENTRIX_SERVER_URL
-              value: "http://169.58.138.136:8080"
+              value: "https://sentrix-server.sentrix-system.svc:8080"
+            - name: SENTRIX_INGEST_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: sentrix-collector-credentials
+                  key: token
+                  optional: true
             - name: CLUSTER_NAME
               value: "production-k8s-cluster"
             - name: SCRAPE_INTERVAL
@@ -129,9 +137,12 @@ spec:
               cpu: 200m
               memory: 128Mi
           securityContext:
-            readOnlyRootFilesystem: false
-            runAsNonRoot: false
-            runAsUser: 0
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: script-vol
               mountPath: /scripts

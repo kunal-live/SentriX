@@ -403,8 +403,12 @@ int http_request(
     }
 
     char buffer[8192];
-    size_t total = 0;
+    size_t stored = 0;
     ssize_t n = 0;
+
+    if (response_body && response_size > 0) {
+        response_body[0] = '\0';
+    }
 
     while (1) {
 #ifdef SENTRIX_ENABLE_TLS
@@ -421,13 +425,14 @@ int http_request(
             break;
         }
 
-        if (total + n < response_size) {
-            memcpy(response_body + total, buffer, n);
+        if (response_body && response_size > 1 && stored < response_size - 1) {
+            size_t avail = (response_size - 1) - stored;
+            size_t to_copy = (size_t)n < avail ? (size_t)n : avail;
+            memcpy(response_body + stored, buffer, to_copy);
+            stored += to_copy;
         }
 
-        total += n;
-
-        if (total >= response_size) {
+        if (!response_body || response_size <= 1 || stored >= response_size - 1) {
             break;
         }
     }
@@ -441,9 +446,11 @@ int http_request(
 
     close(sock);
 
-    if (response_size > 0) {
-        response_body[total < response_size ? total : response_size - 1] = '\0';
+    if (!response_body || response_size == 0) {
+        return 0;
     }
+
+    response_body[stored] = '\0';
 
     int status = 0;
     if (sscanf(response_body, "HTTP/1.%*d %d", &status) != 1) {
@@ -453,15 +460,13 @@ int http_request(
     char *header_end = strstr(response_body, "\r\n\r\n");
     if (header_end) {
         size_t header_len = (size_t)(header_end - response_body) + 4;
-        size_t body_received = total > header_len ? total - header_len : 0;
+        size_t body_received = stored > header_len ? stored - header_len : 0;
 
         if (body_received > 0) {
             memmove(response_body, response_body + header_len, body_received);
         }
 
-        if (body_received < response_size) {
-            response_body[body_received] = '\0';
-        }
+        response_body[body_received] = '\0';
     }
 
     return status;

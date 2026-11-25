@@ -184,6 +184,12 @@ func HandleGetRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 // POST /api/v1/runbooks/{id}/execute
 func HandleExecuteRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		actor := auth.GetUser(r)
+		if actor == nil || (actor.Role != "ADMIN" && actor.Role != "OPERATOR") {
+			http.Error(w, "forbidden: only administrators or operators can execute runbooks", http.StatusForbidden)
+			return
+		}
+
 		id := chi.URLParam(r, "id")
 
 		var matched *Runbook
@@ -197,6 +203,20 @@ func HandleExecuteRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 		if matched == nil {
 			http.Error(w, "runbook not found", http.StatusNotFound)
 			return
+		}
+
+		if len(matched.AllowedRoles) > 0 {
+			roleAllowed := false
+			for _, allowed := range matched.AllowedRoles {
+				if actor.Role == allowed {
+					roleAllowed = true
+					break
+				}
+			}
+			if !roleAllowed {
+				http.Error(w, "forbidden: role is not permitted to execute this runbook", http.StatusForbidden)
+				return
+			}
 		}
 
 		var req struct {
@@ -227,11 +247,7 @@ func HandleExecuteRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 		}
 
-		actor := auth.GetUser(r)
-		triggeredBy := "admin@sentrix.local"
-		if actor != nil {
-			triggeredBy = actor.Email
-		}
+		triggeredBy := actor.Email
 
 		exec := &RunbookExecution{
 			ID:           "exec-" + uuid.New().String()[:8],
