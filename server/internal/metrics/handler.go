@@ -96,9 +96,14 @@ func IngestAuthMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 			}
 			token := strings.TrimSpace(authHeader[7:])
 
-			// 1. Check user JWT
+			// 1. Check user JWT — require OPERATOR or ADMIN for ingestion
 			if claims, err := auth.ValidateAccessToken(token); err == nil && claims != nil {
-				next.ServeHTTP(w, r)
+				if claims.Role != "ADMIN" && claims.Role != "OPERATOR" {
+					http.Error(w, "Forbidden: ingestion requires OPERATOR role or above", http.StatusForbidden)
+					return
+				}
+				ctx := context.WithValue(r.Context(), "ingest_role", claims.Role)
+				next.ServeHTTP(w, r.WithContext(ctx))
 				return
 			}
 

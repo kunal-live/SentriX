@@ -673,33 +673,69 @@ func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 			ctx := r.Context()
 			agentID, isAgent := ctx.Value("agent_id").(string)
 
-			ov, nodes, deps, pods, events, err := loadLatestK8sCluster(ctx, pool)
+			tx, err := pool.Begin(ctx)
 			if err != nil {
-				slog.Error("failed to load cluster state for ingest", "error", err)
+				slog.Error("failed to begin k8s ingest tx", "error", err)
 				http.Error(w, `{"error":"database_error"}`, http.StatusInternalServerError)
 				return
 			}
-			applyK8sIngest(&ov, &nodes, &deps, &pods, &events, payload)
+			defer tx.Rollback(ctx)
 
-			// Verify cluster ownership binding: an agent cannot overwrite a cluster owned by a different agent.
-			var existingOwner *string
-			ownerErr := pool.QueryRow(ctx, `SELECT owner_agent_id::text FROM k8s_clusters WHERE cluster_name = $1`, ov.ClusterName).Scan(&existingOwner)
-			if ownerErr == nil && isAgent && existingOwner != nil && *existingOwner != agentID {
-				http.Error(w, `{"error":"forbidden: cluster owned by another agent"}`, http.StatusForbidden)
-				return
+			targetCluster := payload.ClusterName
+			if targetCluster == "" {
+				targetCluster = "default-k8s-cluster"
 			}
+
+			var ov K8sClusterOverview
+			var nodes []K8sNode
+			var deps []K8sDeployment
+			var pods []K8sPod
+			var events []K8sClusterEvent
+
+			var nodesJSON, depsJSON, podsJSON, eventsJSON []byte
+			loadErr := tx.QueryRow(ctx, `
+				SELECT cluster_name, version, status, total_nodes, ready_nodes,
+					total_pods, running_pods, pending_pods, failed_pods,
+					total_cpu_milli, allocated_cpu_milli, total_memory_bytes, allocated_memory_bytes,
+					is_live_collector, last_sync_at, nodes, deployments, pods, events
+				FROM k8s_clusters
+				WHERE cluster_name = $1
+			`, targetCluster).Scan(
+				&ov.ClusterName, &ov.Version, &ov.Status, &ov.TotalNodes, &ov.ReadyNodes,
+				&ov.TotalPods, &ov.RunningPods, &ov.PendingPods, &ov.FailedPods,
+				&ov.TotalCPUMilli, &ov.AllocatedCPUMilli, &ov.TotalMemoryBytes, &ov.AllocatedMemoryBytes,
+				&ov.IsLiveCollector, &ov.LastSyncAt, &nodesJSON, &depsJSON, &podsJSON, &eventsJSON,
+			)
+			if loadErr == pgx.ErrNoRows {
+				ov = K8sClusterOverview{ClusterName: targetCluster}
+				nodes = []K8sNode{}
+				deps = []K8sDeployment{}
+				pods = []K8sPod{}
+				events = []K8sClusterEvent{}
+			} else if loadErr != nil {
+				slog.Error("failed to load cluster state for ingest", "error", loadErr)
+				http.Error(w, `{"error":"database_error"}`, http.StatusInternalServerError)
+				return
+			} else {
+				_ = json.Unmarshal(nodesJSON, &nodes)
+				_ = json.Unmarshal(depsJSON, &deps)
+				_ = json.Unmarshal(podsJSON, &pods)
+				_ = json.Unmarshal(eventsJSON, &events)
+			}
+
+			applyK8sIngest(&ov, &nodes, &deps, &pods, &events, payload)
 
 			var ownerParam any
 			if isAgent && agentID != "" {
 				ownerParam = agentID
 			}
 
-			nodesJSON, _ := json.Marshal(nodes)
-			depsJSON, _ := json.Marshal(deps)
-			podsJSON, _ := json.Marshal(pods)
-			eventsJSON, _ := json.Marshal(events)
+			nodesJSON, _ = json.Marshal(nodes)
+			depsJSON, _ = json.Marshal(deps)
+			podsJSON, _ = json.Marshal(pods)
+			eventsJSON, _ = json.Marshal(events)
 
-			_, err = pool.Exec(ctx, `
+			tag, err := tx.Exec(ctx, `
 				INSERT INTO k8s_clusters (
 					cluster_name, version, status, total_nodes, ready_nodes,
 					total_pods, running_pods, pending_pods, failed_pods,
@@ -728,6 +764,9 @@ func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 					pods = EXCLUDED.pods,
 					events = EXCLUDED.events,
 					owner_agent_id = COALESCE(k8s_clusters.owner_agent_id, EXCLUDED.owner_agent_id)
+				WHERE k8s_clusters.owner_agent_id IS NULL
+				   OR k8s_clusters.owner_agent_id = $20::uuid
+				   OR $20::uuid IS NULL
 			`,
 				ov.ClusterName, ov.Version, ov.Status, ov.TotalNodes, ov.ReadyNodes,
 				ov.TotalPods, ov.RunningPods, ov.PendingPods, ov.FailedPods,
@@ -737,6 +776,14 @@ func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 			if err != nil {
 				slog.Error("failed to persist k8s cluster state", "error", err)
 				http.Error(w, `{"error":"database_write_failed"}`, http.StatusInternalServerError)
+				return
+			}
+			if tag.RowsAffected() == 0 {
+				http.Error(w, `{"error":"forbidden: cluster owned by another agent"}`, http.StatusForbidden)
+				return
+			}
+			if err := tx.Commit(ctx); err != nil {
+				http.Error(w, `{"error":"database_commit_failed"}`, http.StatusInternalServerError)
 				return
 			}
 
@@ -777,6 +824,12 @@ func HandleIngestContainerMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 
 		if pool != nil && len(incoming) > 0 {
 			ctx := r.Context()
+			agentID, isAgent := ctx.Value("agent_id").(string)
+			var ownerParam any
+			if isAgent && agentID != "" {
+				ownerParam = agentID
+			}
+
 			tx, err := pool.Begin(ctx)
 			if err != nil {
 				http.Error(w, `{"error":"database_error"}`, http.StatusInternalServerError)
@@ -786,6 +839,17 @@ func HandleIngestContainerMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 
 			batch := &pgx.Batch{}
 			for _, c := range incoming {
+				if isAgent {
+					if c.ServerID == "" {
+						_ = tx.QueryRow(ctx, `SELECT id::text FROM servers WHERE agent_id = $1::uuid LIMIT 1`, agentID).Scan(&c.ServerID)
+					}
+					var owns bool
+					_ = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM servers WHERE id::text = $1 AND agent_id = $2::uuid)`, c.ServerID, agentID).Scan(&owns)
+					if !owns {
+						http.Error(w, `{"error":"forbidden: server_id does not belong to agent"}`, http.StatusForbidden)
+						return
+					}
+				}
 				if c.ID == "" {
 					c.ID = "cnt-" + uuid.New().String()[:8]
 				}
@@ -796,8 +860,8 @@ func HandleIngestContainerMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 					INSERT INTO docker_containers (
 						id, name, image, status, server_id, server_name,
 						cpu_usage_pct, memory_usage_bytes, memory_limit_bytes,
-						net_rx_bytes, net_tx_bytes, restart_count, oom_killed, created_at, updated_at
-					) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+						net_rx_bytes, net_tx_bytes, restart_count, oom_killed, created_at, owner_agent_id, updated_at
+					) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NOW())
 					ON CONFLICT (id) DO UPDATE SET
 						name = EXCLUDED.name,
 						image = EXCLUDED.image,
@@ -809,18 +873,28 @@ func HandleIngestContainerMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 						net_tx_bytes = EXCLUDED.net_tx_bytes,
 						restart_count = EXCLUDED.restart_count,
 						oom_killed = EXCLUDED.oom_killed,
+						owner_agent_id = COALESCE(docker_containers.owner_agent_id, EXCLUDED.owner_agent_id),
 						updated_at = NOW()
+					WHERE docker_containers.owner_agent_id IS NULL
+					   OR docker_containers.owner_agent_id = $15::uuid
+					   OR $15::uuid IS NULL
 				`, c.ID, c.Name, c.Image, c.Status, c.ServerID, c.ServerName,
 					c.CPUUsagePct, int64(c.MemoryUsageBytes), int64(c.MemoryLimitBytes),
-					int64(c.NetRxBytes), int64(c.NetTxBytes), c.RestartCount, c.OOMKilled, c.CreatedAt)
+					int64(c.NetRxBytes), int64(c.NetTxBytes), c.RestartCount, c.OOMKilled, c.CreatedAt, ownerParam)
 			}
 
 			br := tx.SendBatch(ctx, batch)
 			for i := 0; i < batch.Len(); i++ {
-				if _, execErr := br.Exec(); execErr != nil {
+				tag, execErr := br.Exec()
+				if execErr != nil {
 					br.Close()
 					slog.Error("failed to persist container batch", "error", execErr)
 					http.Error(w, `{"error":"database_write_failed"}`, http.StatusInternalServerError)
+					return
+				}
+				if tag.RowsAffected() == 0 {
+					br.Close()
+					http.Error(w, `{"error":"forbidden: container owned by another agent"}`, http.StatusForbidden)
 					return
 				}
 			}
