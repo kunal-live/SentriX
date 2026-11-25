@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -68,58 +69,6 @@ func main() {
 	go hub.Run()
 	ticketStore := realtime.NewTicketStore()
 
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://sentrix:sentrix_secret@localhost:5432/sentrix?sslmode=disable"
-	}
-
-	var pool *pgxpool.Pool
-	isDBLive := false
-
-	poolConfig, err := pgxpool.ParseConfig(dbURL)
-	if err == nil {
-		poolConfig.ConnConfig.ConnectTimeout = 2 * time.Second
-		p, err := pgxpool.NewWithConfig(ctx, poolConfig)
-		if err == nil {
-			pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			if pingErr := p.Ping(pingCtx); pingErr == nil {
-				pool = p
-				isDBLive = true
-				slog.Info("Connected to TimescaleDB successfully")
-
-				migrationsDir := os.Getenv("SENTRIX_MIGRATIONS_DIR")
-				if migrationsDir == "" {
-					for _, dir := range []string{"migrations", "server/migrations", "../server/migrations"} {
-						if _, err := os.Stat(dir); err == nil {
-							migrationsDir = dir
-							break
-						}
-					}
-				}
-
-				if migrationsDir != "" {
-					if err := storage.ApplyMigrations(ctx, pool, migrationsDir); err != nil {
-						slog.Warn("Failed to run schema migrations", "error", err)
-					}
-				}
-
-				if err := auth.BootstrapAdmin(ctx, pool); err != nil {
-					slog.Warn("Failed to bootstrap admin user", "error", err)
-				}
-
-				logs.StartLiveCollectors(context.Background(), pool)
-				traces.SeedTracesDB(context.Background(), pool)
-			} else {
-				p.Close()
-			}
-			cancel()
-		}
-	}
-
-	if pool != nil {
-		defer pool.Close()
-	}
-
 	demoRequested := os.Getenv("SENTRIX_DEMO_MODE") == "true"
 	for _, arg := range os.Args[1:] {
 		if arg == "--demo" {
@@ -127,9 +76,67 @@ func main() {
 		}
 	}
 
+	dbURL := os.Getenv("DATABASE_URL")
+	var pool *pgxpool.Pool
+	isDBLive := false
+
+	if dbURL != "" {
+		poolConfig, err := pgxpool.ParseConfig(dbURL)
+		if err == nil {
+			poolConfig.ConnConfig.ConnectTimeout = 2 * time.Second
+			p, err := pgxpool.NewWithConfig(ctx, poolConfig)
+			if err == nil {
+				pingCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				if pingErr := p.Ping(pingCtx); pingErr == nil {
+					pool = p
+					isDBLive = true
+					slog.Info("Connected to TimescaleDB successfully")
+
+					migrationsDir := os.Getenv("SENTRIX_MIGRATIONS_DIR")
+					if migrationsDir == "" {
+						for _, dir := range []string{"migrations", "server/migrations", "../server/migrations"} {
+							if _, err := os.Stat(dir); err == nil {
+								migrationsDir = dir
+								break
+							}
+						}
+					}
+
+					if migrationsDir != "" {
+						if err := storage.ApplyMigrations(ctx, pool, migrationsDir); err != nil {
+							slog.Warn("Failed to run schema migrations", "error", err)
+						}
+					}
+
+					if err := auth.BootstrapAdmin(ctx, pool); err != nil {
+						slog.Warn("Failed to bootstrap admin user", "error", err)
+					}
+
+					logs.StartLiveCollectors(context.Background(), pool)
+					traces.SeedTracesDB(context.Background(), pool)
+				} else {
+					p.Close()
+				}
+				cancel()
+			}
+		}
+	}
+
+	if pool != nil {
+		defer pool.Close()
+	}
+
 	if !isDBLive && !demoRequested {
-		slog.Error("FATAL: Failed to connect to database and demo mode was not requested.", "db_url", dbURL)
-		slog.Error("To run in-memory fleet simulation explicitly, set SENTRIX_DEMO_MODE=true or pass --demo flag.")
+		redactedURL := "<unset>"
+		if dbURL != "" {
+			if u, parseErr := url.Parse(dbURL); parseErr == nil {
+				redactedURL = u.Redacted()
+			} else {
+				redactedURL = "<invalid>"
+			}
+		}
+		slog.Error("FATAL: Failed to connect to database and demo mode was not requested.", "db_url", redactedURL)
+		slog.Error("Set DATABASE_URL to a valid PostgreSQL/TimescaleDB connection string, or enable SENTRIX_DEMO_MODE=true / --demo.")
 		os.Exit(1)
 	}
 
@@ -173,9 +180,17 @@ func main() {
 	// Kubernetes DaemonSet manifest download
 	r.Get("/deploy/sentrix-daemonset.yaml", containers.HandleServeK8sDaemonSet())
 
-	// OpenTelemetry standard OTLP/HTTP trace receiver endpoints
-	r.Post("/v1/traces", traces.HandleIngestTraces(pool))
-	r.Post("/otlp/v1/traces", traces.HandleIngestTraces(pool))
+	if isDBLive {
+		// Authenticated OpenTelemetry OTLP/HTTP trace receiver endpoints (accepts Agent token or User JWT)
+		r.Group(func(r chi.Router) {
+			r.Use(metrics.IngestAuthMiddleware(pool))
+			r.Post("/v1/traces", traces.HandleIngestTraces(pool))
+			r.Post("/otlp/v1/traces", traces.HandleIngestTraces(pool))
+		})
+	} else {
+		r.Post("/v1/traces", traces.HandleIngestTraces(nil))
+		r.Post("/otlp/v1/traces", traces.HandleIngestTraces(nil))
+	}
 
 	if isDBLive {
 		slog.Info("Mounting persistent database endpoints")
@@ -200,15 +215,11 @@ func main() {
 			enrollLimiter := security.NewRateLimiter(10, 20)
 			r.With(security.HTTPRateLimit(enrollLimiter, security.IPKey, "Too many enrollment requests; please try again later")).Post("/agent/enroll", agents.HandleEnroll(pool))
 
-			// Public agent binary download for the universal installer
+			// Public agent binary download & K8s DaemonSet manifest for installers
 			r.Get("/downloads/agent", agents.HandleDownloadAgent())
-
-			// Kubernetes & APM telemetry ingestion endpoints
 			r.Get("/kubernetes/daemonset.yaml", containers.HandleServeK8sDaemonSet())
-			r.Post("/kubernetes/ingest", containers.HandleIngestK8sMetrics(pool))
-			r.Post("/containers/ingest", containers.HandleIngestContainerMetrics(pool))
-			r.Post("/apm/metrics", services.HandleIngestAPMMetrics(pool))
 
+			// Agent-authenticated telemetry, K8s, container & APM ingestion endpoints
 			r.Group(func(r chi.Router) {
 				r.Use(metrics.AgentAuthMiddleware(pool))
 				r.Post("/agent/telemetry", metrics.HandleTelemetry(pool))
@@ -216,6 +227,9 @@ func main() {
 				r.Post("/telemetry/batch", metrics.HandleBatchTelemetry(pool))
 				r.Get("/agent/checks", checks.HandleAgentChecks(pool))
 				r.Post("/agent/check-results", checks.HandleAgentCheckResults(pool))
+				r.Post("/kubernetes/ingest", containers.HandleIngestK8sMetrics(pool))
+				r.Post("/containers/ingest", containers.HandleIngestContainerMetrics(pool))
+				r.Post("/apm/metrics", services.HandleIngestAPMMetrics(pool))
 			})
 
 			// Authenticated user routes
@@ -412,8 +426,7 @@ func main() {
 		go notifications.StartWorker(ctx, pool)
 		go servers.StartStatusMonitor(ctx, pool)
 	} else {
-		slog.Warn("TimescaleDB not reachable at localhost:5432; running in Standalone Demo Mode with live simulation!")
-		slog.Info("Default credentials: admin@sentrix.local / admin12345")
+		slog.Warn("Database not connected; running in Standalone Demo Mode with live simulation!")
 
 		r.Route("/api/v1", func(apiRouter chi.Router) {
 			demo.RegisterDemoRoutes(apiRouter, bus, hub, ticketStore)

@@ -49,6 +49,10 @@ target_compile_definitions(sentrix-agent PRIVATE
 )
 
 option(SENTRIX_INSECURE_DEV_NO_TLS "Allow building sentrix-agent without OpenSSL (development only)" OFF)
+option(SENTRIX_ALLOW_INSECURE_TLS "Allow SENTRIX_INSECURE_SKIP_VERIFY env var (development only)" OFF)
+if(SENTRIX_ALLOW_INSECURE_TLS)
+    target_compile_definitions(sentrix-agent PRIVATE SENTRIX_ALLOW_INSECURE_TLS=1)
+endif()
 
 if(SENTRIX_INSECURE_DEV_NO_TLS)
     find_package(OpenSSL QUIET)

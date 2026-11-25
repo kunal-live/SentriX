@@ -1,12 +1,16 @@
 package containers
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"os"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -433,6 +437,37 @@ func seedClusterData() {
 // GET /api/v1/containers
 func HandleListContainers(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if pool != nil {
+			rows, err := pool.Query(r.Context(), `
+				SELECT id, name, image, status, server_id, server_name,
+					cpu_usage_pct, memory_usage_bytes, memory_limit_bytes,
+					net_rx_bytes, net_tx_bytes, restart_count, oom_killed, created_at
+				FROM docker_containers
+				ORDER BY updated_at DESC, name ASC
+			`)
+			if err != nil {
+				slog.Error("failed to query docker_containers", "error", err)
+				http.Error(w, `{"error":"database_error"}`, http.StatusInternalServerError)
+				return
+			}
+			defer rows.Close()
+
+			result := []DockerContainer{}
+			for rows.Next() {
+				var c DockerContainer
+				if scanErr := rows.Scan(
+					&c.ID, &c.Name, &c.Image, &c.Status, &c.ServerID, &c.ServerName,
+					&c.CPUUsagePct, &c.MemoryUsageBytes, &c.MemoryLimitBytes,
+					&c.NetRxBytes, &c.NetTxBytes, &c.RestartCount, &c.OOMKilled, &c.CreatedAt,
+				); scanErr == nil {
+					result = append(result, c)
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(result)
+			return
+		}
+
 		k8sMu.RLock()
 		defer k8sMu.RUnlock()
 
@@ -441,9 +476,62 @@ func HandleListContainers(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
+func loadLatestK8sCluster(ctx context.Context, pool *pgxpool.Pool) (K8sClusterOverview, []K8sNode, []K8sDeployment, []K8sPod, []K8sClusterEvent, error) {
+	var ov K8sClusterOverview
+	var nodesJSON, depsJSON, podsJSON, eventsJSON []byte
+	err := pool.QueryRow(ctx, `
+		SELECT cluster_name, version, status, total_nodes, ready_nodes,
+			total_pods, running_pods, pending_pods, failed_pods,
+			total_cpu_milli, allocated_cpu_milli, total_memory_bytes, allocated_memory_bytes,
+			is_live_collector, last_sync_at, nodes, deployments, pods, events
+		FROM k8s_clusters
+		ORDER BY last_sync_at DESC
+		LIMIT 1
+	`).Scan(
+		&ov.ClusterName, &ov.Version, &ov.Status, &ov.TotalNodes, &ov.ReadyNodes,
+		&ov.TotalPods, &ov.RunningPods, &ov.PendingPods, &ov.FailedPods,
+		&ov.TotalCPUMilli, &ov.AllocatedCPUMilli, &ov.TotalMemoryBytes, &ov.AllocatedMemoryBytes,
+		&ov.IsLiveCollector, &ov.LastSyncAt, &nodesJSON, &depsJSON, &podsJSON, &eventsJSON,
+	)
+	if err == pgx.ErrNoRows {
+		return K8sClusterOverview{
+			ClusterName:     "awaiting-collector",
+			Version:         "—",
+			Status:          "AWAITING_DATA",
+			IsLiveCollector: false,
+			LastSyncAt:      time.Now().UTC(),
+		}, []K8sNode{}, []K8sDeployment{}, []K8sPod{}, []K8sClusterEvent{}, nil
+	}
+	if err != nil {
+		return ov, nil, nil, nil, nil, err
+	}
+
+	nodes := []K8sNode{}
+	deps := []K8sDeployment{}
+	pods := []K8sPod{}
+	events := []K8sClusterEvent{}
+	_ = json.Unmarshal(nodesJSON, &nodes)
+	_ = json.Unmarshal(depsJSON, &deps)
+	_ = json.Unmarshal(podsJSON, &pods)
+	_ = json.Unmarshal(eventsJSON, &events)
+	return ov, nodes, deps, pods, events, nil
+}
+
 // GET /api/v1/kubernetes/overview
 func HandleGetK8sOverview(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if pool != nil {
+			ov, _, _, _, _, err := loadLatestK8sCluster(r.Context(), pool)
+			if err != nil {
+				slog.Error("failed to load k8s overview", "error", err)
+				http.Error(w, `{"error":"database_error"}`, http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(ov)
+			return
+		}
+
 		k8sMu.RLock()
 		defer k8sMu.RUnlock()
 
@@ -455,6 +543,18 @@ func HandleGetK8sOverview(pool *pgxpool.Pool) http.HandlerFunc {
 // GET /api/v1/kubernetes/nodes
 func HandleGetK8sNodes(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if pool != nil {
+			_, nodes, _, _, _, err := loadLatestK8sCluster(r.Context(), pool)
+			if err != nil {
+				slog.Error("failed to load k8s nodes", "error", err)
+				http.Error(w, `{"error":"database_error"}`, http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(nodes)
+			return
+		}
+
 		k8sMu.RLock()
 		defer k8sMu.RUnlock()
 
@@ -466,6 +566,22 @@ func HandleGetK8sNodes(pool *pgxpool.Pool) http.HandlerFunc {
 // GET /api/v1/kubernetes/workloads
 func HandleGetK8sWorkloads(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if pool != nil {
+			_, _, deps, pods, events, err := loadLatestK8sCluster(r.Context(), pool)
+			if err != nil {
+				slog.Error("failed to load k8s workloads", "error", err)
+				http.Error(w, `{"error":"database_error"}`, http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"deployments": deps,
+				"pods":        pods,
+				"events":      events,
+			})
+			return
+		}
+
 		k8sMu.RLock()
 		defer k8sMu.RUnlock()
 
@@ -478,6 +594,72 @@ func HandleGetK8sWorkloads(pool *pgxpool.Pool) http.HandlerFunc {
 	}
 }
 
+func applyK8sIngest(ov *K8sClusterOverview, nodes *[]K8sNode, deps *[]K8sDeployment, pods *[]K8sPod, events *[]K8sClusterEvent, payload K8sIngestPayload) {
+	if payload.ClusterName != "" {
+		ov.ClusterName = payload.ClusterName
+	} else if ov.ClusterName == "" || ov.ClusterName == "awaiting-collector" {
+		ov.ClusterName = "default-k8s-cluster"
+	}
+	if payload.Version != "" {
+		ov.Version = payload.Version
+	}
+	ov.Status = "HEALTHY"
+	ov.IsLiveCollector = true
+	ov.LastSyncAt = time.Now().UTC()
+
+	if len(payload.Nodes) > 0 {
+		*nodes = payload.Nodes
+		ov.TotalNodes = len(*nodes)
+		ready := 0
+		for _, n := range *nodes {
+			if n.Status == "Ready" {
+				ready++
+			}
+		}
+		ov.ReadyNodes = ready
+	}
+
+	if len(payload.Deployments) > 0 {
+		*deps = payload.Deployments
+	}
+
+	if len(payload.Pods) > 0 {
+		*pods = payload.Pods
+		ov.TotalPods = len(*pods)
+		running, pending, failed := 0, 0, 0
+		var allocatedCPU int64
+		var allocatedMem uint64
+		for _, p := range *pods {
+			switch p.Phase {
+			case "Running":
+				running++
+			case "Pending":
+				pending++
+			case "Failed", "CrashLoopBackOff":
+				failed++
+			}
+			allocatedCPU += p.CPULimitMilli
+			allocatedMem += uint64(p.MemLimitMB * 1024 * 1024)
+		}
+		ov.RunningPods = running
+		ov.PendingPods = pending
+		ov.FailedPods = failed
+		if allocatedCPU > 0 {
+			ov.AllocatedCPUMilli = allocatedCPU
+		}
+		if allocatedMem > 0 {
+			ov.AllocatedMemoryBytes = allocatedMem
+		}
+	}
+
+	if len(payload.Events) > 0 {
+		*events = append(payload.Events, *events...)
+		if len(*events) > 100 {
+			*events = (*events)[:100]
+		}
+	}
+}
+
 // POST /api/v1/kubernetes/ingest
 func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -487,70 +669,75 @@ func HandleIngestK8sMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
+		if pool != nil {
+			ctx := r.Context()
+			ov, nodes, deps, pods, events, err := loadLatestK8sCluster(ctx, pool)
+			if err != nil {
+				slog.Error("failed to load cluster state for ingest", "error", err)
+				http.Error(w, `{"error":"database_error"}`, http.StatusInternalServerError)
+				return
+			}
+			applyK8sIngest(&ov, &nodes, &deps, &pods, &events, payload)
+
+			nodesJSON, _ := json.Marshal(nodes)
+			depsJSON, _ := json.Marshal(deps)
+			podsJSON, _ := json.Marshal(pods)
+			eventsJSON, _ := json.Marshal(events)
+
+			_, err = pool.Exec(ctx, `
+				INSERT INTO k8s_clusters (
+					cluster_name, version, status, total_nodes, ready_nodes,
+					total_pods, running_pods, pending_pods, failed_pods,
+					total_cpu_milli, allocated_cpu_milli, total_memory_bytes, allocated_memory_bytes,
+					is_live_collector, last_sync_at, nodes, deployments, pods, events
+				) VALUES (
+					$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+				)
+				ON CONFLICT (cluster_name) DO UPDATE SET
+					version = EXCLUDED.version,
+					status = EXCLUDED.status,
+					total_nodes = EXCLUDED.total_nodes,
+					ready_nodes = EXCLUDED.ready_nodes,
+					total_pods = EXCLUDED.total_pods,
+					running_pods = EXCLUDED.running_pods,
+					pending_pods = EXCLUDED.pending_pods,
+					failed_pods = EXCLUDED.failed_pods,
+					total_cpu_milli = EXCLUDED.total_cpu_milli,
+					allocated_cpu_milli = EXCLUDED.allocated_cpu_milli,
+					total_memory_bytes = EXCLUDED.total_memory_bytes,
+					allocated_memory_bytes = EXCLUDED.allocated_memory_bytes,
+					is_live_collector = TRUE,
+					last_sync_at = EXCLUDED.last_sync_at,
+					nodes = EXCLUDED.nodes,
+					deployments = EXCLUDED.deployments,
+					pods = EXCLUDED.pods,
+					events = EXCLUDED.events
+			`,
+				ov.ClusterName, ov.Version, ov.Status, ov.TotalNodes, ov.ReadyNodes,
+				ov.TotalPods, ov.RunningPods, ov.PendingPods, ov.FailedPods,
+				ov.TotalCPUMilli, ov.AllocatedCPUMilli, int64(ov.TotalMemoryBytes), int64(ov.AllocatedMemoryBytes),
+				true, ov.LastSyncAt, nodesJSON, depsJSON, podsJSON, eventsJSON,
+			)
+			if err != nil {
+				slog.Error("failed to persist k8s cluster state", "error", err)
+				http.Error(w, `{"error":"database_write_failed"}`, http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":       "accepted",
+				"cluster_name": ov.ClusterName,
+				"nodes_count":  len(nodes),
+				"pods_count":   len(pods),
+			})
+			return
+		}
+
 		k8sMu.Lock()
 		defer k8sMu.Unlock()
-
-		if payload.ClusterName != "" {
-			liveOverview.ClusterName = payload.ClusterName
-		}
-		if payload.Version != "" {
-			liveOverview.Version = payload.Version
-		}
-		liveOverview.IsLiveCollector = true
-		liveOverview.LastSyncAt = time.Now().UTC()
-
-		if len(payload.Nodes) > 0 {
-			liveNodes = payload.Nodes
-			liveOverview.TotalNodes = len(liveNodes)
-			ready := 0
-			for _, n := range liveNodes {
-				if n.Status == "Ready" {
-					ready++
-				}
-			}
-			liveOverview.ReadyNodes = ready
-		}
-
-		if len(payload.Deployments) > 0 {
-			liveDeployments = payload.Deployments
-		}
-
-		if len(payload.Pods) > 0 {
-			livePods = payload.Pods
-			liveOverview.TotalPods = len(livePods)
-			running, pending, failed := 0, 0, 0
-			var allocatedCPU int64
-			var allocatedMem uint64
-			for _, p := range livePods {
-				switch p.Phase {
-				case "Running":
-					running++
-				case "Pending":
-					pending++
-				case "Failed", "CrashLoopBackOff":
-					failed++
-				}
-				allocatedCPU += p.CPULimitMilli
-				allocatedMem += uint64(p.MemLimitMB * 1024 * 1024)
-			}
-			liveOverview.RunningPods = running
-			liveOverview.PendingPods = pending
-			liveOverview.FailedPods = failed
-			if allocatedCPU > 0 {
-				liveOverview.AllocatedCPUMilli = allocatedCPU
-			}
-			if allocatedMem > 0 {
-				liveOverview.AllocatedMemoryBytes = allocatedMem
-			}
-		}
-
-		if len(payload.Events) > 0 {
-			// Prepend new events
-			liveEvents = append(payload.Events, liveEvents...)
-			if len(liveEvents) > 100 {
-				liveEvents = liveEvents[:100]
-			}
-		}
+		applyK8sIngest(&liveOverview, &liveNodes, &liveDeployments, &livePods, &liveEvents, payload)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
@@ -569,6 +756,70 @@ func HandleIngestContainerMetrics(pool *pgxpool.Pool) http.HandlerFunc {
 		var incoming []DockerContainer
 		if err := json.NewDecoder(r.Body).Decode(&incoming); err != nil {
 			http.Error(w, `{"error":"invalid_json"}`, http.StatusBadRequest)
+			return
+		}
+
+		if pool != nil && len(incoming) > 0 {
+			ctx := r.Context()
+			tx, err := pool.Begin(ctx)
+			if err != nil {
+				http.Error(w, `{"error":"database_error"}`, http.StatusInternalServerError)
+				return
+			}
+			defer tx.Rollback(ctx)
+
+			batch := &pgx.Batch{}
+			for _, c := range incoming {
+				if c.ID == "" {
+					c.ID = "cnt-" + uuid.New().String()[:8]
+				}
+				if c.CreatedAt.IsZero() {
+					c.CreatedAt = time.Now().UTC()
+				}
+				batch.Queue(`
+					INSERT INTO docker_containers (
+						id, name, image, status, server_id, server_name,
+						cpu_usage_pct, memory_usage_bytes, memory_limit_bytes,
+						net_rx_bytes, net_tx_bytes, restart_count, oom_killed, created_at, updated_at
+					) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+					ON CONFLICT (id) DO UPDATE SET
+						name = EXCLUDED.name,
+						image = EXCLUDED.image,
+						status = EXCLUDED.status,
+						cpu_usage_pct = EXCLUDED.cpu_usage_pct,
+						memory_usage_bytes = EXCLUDED.memory_usage_bytes,
+						memory_limit_bytes = EXCLUDED.memory_limit_bytes,
+						net_rx_bytes = EXCLUDED.net_rx_bytes,
+						net_tx_bytes = EXCLUDED.net_tx_bytes,
+						restart_count = EXCLUDED.restart_count,
+						oom_killed = EXCLUDED.oom_killed,
+						updated_at = NOW()
+				`, c.ID, c.Name, c.Image, c.Status, c.ServerID, c.ServerName,
+					c.CPUUsagePct, int64(c.MemoryUsageBytes), int64(c.MemoryLimitBytes),
+					int64(c.NetRxBytes), int64(c.NetTxBytes), c.RestartCount, c.OOMKilled, c.CreatedAt)
+			}
+
+			br := tx.SendBatch(ctx, batch)
+			for i := 0; i < batch.Len(); i++ {
+				if _, execErr := br.Exec(); execErr != nil {
+					br.Close()
+					slog.Error("failed to persist container batch", "error", execErr)
+					http.Error(w, `{"error":"database_write_failed"}`, http.StatusInternalServerError)
+					return
+				}
+			}
+			br.Close()
+			if err := tx.Commit(ctx); err != nil {
+				http.Error(w, `{"error":"database_commit_failed"}`, http.StatusInternalServerError)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(map[string]any{
+				"status":            "accepted",
+				"containers_stored": len(incoming),
+			})
 			return
 		}
 

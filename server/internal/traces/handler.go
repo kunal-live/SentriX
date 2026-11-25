@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sentrix/server/internal/api"
 )
@@ -541,11 +542,20 @@ func HandleIngestTraces(pool *pgxpool.Pool) http.HandlerFunc {
 			return
 		}
 
-		// Save to PostgreSQL & in-memory buffer
+		// Save to PostgreSQL using a single transactional pgx.Batch & update in-memory buffer
 		ctx := r.Context()
-		for _, t := range tracesToSave {
-			if pool != nil {
-				_, _ = pool.Exec(ctx, `
+		if pool != nil {
+			tx, err := pool.Begin(ctx)
+			if err != nil {
+				slog.Error("failed to begin trace ingest tx", "error", err)
+				api.RespondError(w, r, http.StatusInternalServerError, "DB_ERROR", "Failed to start trace transaction")
+				return
+			}
+			defer tx.Rollback(ctx)
+
+			batch := &pgx.Batch{}
+			for _, t := range tracesToSave {
+				batch.Queue(`
 					INSERT INTO traces (trace_id, root_service, root_operation, duration_ms, start_time, status, span_count)
 					VALUES ($1, $2, $3, $4, $5, $6, $7)
 					ON CONFLICT (trace_id) DO UPDATE SET
@@ -555,8 +565,11 @@ func HandleIngestTraces(pool *pgxpool.Pool) http.HandlerFunc {
 				`, t.TraceID, t.RootService, t.RootOperation, t.DurationMs, t.StartTime, t.Status, t.SpanCount)
 
 				for _, s := range t.Spans {
-					attrJSON, _ := json.Marshal(s.Attributes)
-					_, _ = pool.Exec(ctx, `
+					attrJSON, err := json.Marshal(s.Attributes)
+					if err != nil {
+						attrJSON = []byte("{}")
+					}
+					batch.Queue(`
 						INSERT INTO spans (span_id, trace_id, parent_span_id, service_name, operation, duration_ms, start_time, status, status_code, attributes)
 						VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 						ON CONFLICT (span_id) DO UPDATE SET
@@ -568,14 +581,35 @@ func HandleIngestTraces(pool *pgxpool.Pool) http.HandlerFunc {
 				}
 			}
 
-			// In-memory update
-			traceStoreMu.Lock()
-			traceBuffer = append([]TraceDetail{t}, traceBuffer...)
-			if len(traceBuffer) > 500 {
-				traceBuffer = traceBuffer[:500]
+			br := tx.SendBatch(ctx, batch)
+			for i := 0; i < batch.Len(); i++ {
+				if _, execErr := br.Exec(); execErr != nil {
+					br.Close()
+					slog.Error("failed to persist trace batch", "error", execErr)
+					api.RespondError(w, r, http.StatusInternalServerError, "DB_WRITE_FAILED", "Failed to persist trace spans")
+					return
+				}
 			}
-			traceStoreMu.Unlock()
+			if closeErr := br.Close(); closeErr != nil {
+				slog.Error("failed to close trace batch", "error", closeErr)
+				api.RespondError(w, r, http.StatusInternalServerError, "DB_WRITE_FAILED", "Failed to finalize trace batch")
+				return
+			}
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				slog.Error("failed to commit trace batch", "error", commitErr)
+				api.RespondError(w, r, http.StatusInternalServerError, "DB_COMMIT_FAILED", "Failed to commit trace transaction")
+				return
+			}
 		}
+
+		traceStoreMu.Lock()
+		for _, t := range tracesToSave {
+			traceBuffer = append([]TraceDetail{t}, traceBuffer...)
+		}
+		if len(traceBuffer) > 500 {
+			traceBuffer = traceBuffer[:500]
+		}
+		traceStoreMu.Unlock()
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)

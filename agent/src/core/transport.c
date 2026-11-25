@@ -64,6 +64,7 @@ static SSL_CTX *get_ssl_context(void) {
         }
     }
 
+#ifdef SENTRIX_ALLOW_INSECURE_TLS
     const char *skip_verify = getenv("SENTRIX_INSECURE_SKIP_VERIFY");
     if (skip_verify && (strcmp(skip_verify, "1") == 0 || strcmp(skip_verify, "true") == 0)) {
         fprintf(stderr, "SECURITY WARNING: SENTRIX_INSECURE_SKIP_VERIFY is active! Server certificate will NOT be verified.\n");
@@ -71,6 +72,9 @@ static SSL_CTX *get_ssl_context(void) {
     } else {
         SSL_CTX_set_verify(g_ssl_ctx, SSL_VERIFY_PEER, NULL);
     }
+#else
+    SSL_CTX_set_verify(g_ssl_ctx, SSL_VERIFY_PEER, NULL);
+#endif
 
     return g_ssl_ctx;
 }

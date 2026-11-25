@@ -8,14 +8,52 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/sentrix/server/internal/auth"
 	"github.com/sentrix/server/internal/logs"
 	"github.com/sentrix/server/internal/realtime"
 	"github.com/sentrix/server/internal/selfmetrics"
 )
+
+type telemetryLogEvent struct {
+	serverID string
+	seq      int64
+	count    int
+	ts       time.Time
+}
+
+var (
+	telemetryLogOnce  sync.Once
+	telemetryLogQueue = make(chan telemetryLogEvent, 256)
+)
+
+func startTelemetryLogWorker(pool *pgxpool.Pool) {
+	telemetryLogOnce.Do(func() {
+		go func() {
+			for ev := range telemetryLogQueue {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				var srvName string
+				_ = pool.QueryRow(ctx, "SELECT COALESCE(name, hostname) FROM servers WHERE id = $1", ev.serverID).Scan(&srvName)
+				if srvName == "" && len(ev.serverID) >= 8 {
+					srvName = "node-" + ev.serverID[:8]
+				}
+				logs.RecordLog(ctx, pool, logs.StructuredLogEntry{
+					Timestamp: ev.ts,
+					Level:     "INFO",
+					Service:   "telemetry-engine",
+					Server:    srvName,
+					ServerID:  ev.serverID,
+					Message:   fmt.Sprintf("Ingested %d metric datapoints (sequence %d) from %s into TimescaleDB.", ev.count, ev.seq, srvName),
+				})
+				cancel()
+			}
+		}()
+	})
+}
 
 func hashCredential(raw string) string {
 	sum := sha256.Sum256([]byte(raw))
@@ -47,11 +85,45 @@ func AgentAuthMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
 	}
 }
 
+// IngestAuthMiddleware accepts either an active agent bearer token or a valid user JWT.
+func IngestAuthMiddleware(pool *pgxpool.Pool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if len(authHeader) < 7 || !strings.EqualFold(authHeader[:7], "Bearer ") {
+				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				return
+			}
+			token := strings.TrimSpace(authHeader[7:])
+
+			// 1. Check user JWT
+			if claims, err := auth.ValidateAccessToken(token); err == nil && claims != nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// 2. Check active agent credential
+			if pool != nil {
+				hashed := hashCredential(token)
+				var agentID string
+				if err := pool.QueryRow(r.Context(), "SELECT id FROM agents WHERE credential_hash = $1 AND status = 'ACTIVE'", hashed).Scan(&agentID); err == nil {
+					ctx := context.WithValue(r.Context(), "agent_id", agentID)
+					next.ServeHTTP(w, r.WithContext(ctx))
+					return
+				}
+			}
+
+			http.Error(w, "Invalid credential", http.StatusUnauthorized)
+		})
+	}
+}
+
 type TelemetryPayload struct {
-	AgentID   string    `json:"agent_id"`
-	Timestamp time.Time `json:"timestamp"`
-	Sequence  int64     `json:"sequence"`
-	Metrics   []Metric  `json:"metrics"`
+	AgentID      string    `json:"agent_id"`
+	Timestamp    time.Time `json:"timestamp"`
+	Sequence     int64     `json:"sequence"`
+	RestartNonce string    `json:"restart_nonce,omitempty"`
+	Metrics      []Metric  `json:"metrics"`
 }
 
 type Metric struct {
@@ -123,13 +195,14 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 
 		var lastSequence int64
 		var lastTelemetryAt *time.Time
+		var lastNonce string
 
 		err = tx.QueryRow(ctx, `
-			SELECT last_sequence, last_telemetry_at
+			SELECT last_sequence, last_telemetry_at, COALESCE(last_restart_nonce, '')
 			FROM agents
 			WHERE id = $1
 			FOR UPDATE
-		`, agentID).Scan(&lastSequence, &lastTelemetryAt)
+		`, agentID).Scan(&lastSequence, &lastTelemetryAt, &lastNonce)
 
 		if err != nil {
 			selfmetrics.Global().IngestFailures.Add(1)
@@ -149,9 +222,10 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 				return
 			}
 
-			// Allow agent restart sequence reset when moving forward in time.
-			// Agents reset sequence on startup (1, 2, ...); allow reset if time advanced.
-			allowReset := (lastTelemetryAt == nil) || (payload.Timestamp.After(*lastTelemetryAt) && payload.Sequence <= 10)
+			// Allow agent restart sequence reset strictly at sequence == 1 when moving forward in time
+			// and (if a restart_nonce is tracked) with a fresh restart nonce.
+			nonceAllowed := lastNonce == "" || (payload.RestartNonce != "" && payload.RestartNonce != lastNonce)
+			allowReset := (lastTelemetryAt == nil) || (payload.Sequence == 1 && payload.Timestamp.After(*lastTelemetryAt) && nonceAllowed)
 
 			if !allowReset {
 				selfmetrics.Global().IngestFailures.Add(1)
@@ -164,9 +238,10 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 			UPDATE agents
 			SET
 				last_sequence = $2,
-				last_telemetry_at = $3
+				last_telemetry_at = $3,
+				last_restart_nonce = COALESCE(NULLIF($4, ''), last_restart_nonce)
 			WHERE id = $1
-		`, agentID, payload.Sequence, payload.Timestamp)
+		`, agentID, payload.Sequence, payload.Timestamp, payload.RestartNonce)
 
 		if err != nil {
 			selfmetrics.Global().IngestFailures.Add(1)
@@ -235,23 +310,18 @@ func HandleTelemetry(pool *pgxpool.Pool) http.HandlerFunc {
 
 		selfmetrics.Global().IngestSamples.Add(int64(len(payload.Metrics)))
 
-		// Record live telemetry ingestion in system_logs periodically (every 3 sequences or initial sequences)
+		// Record live telemetry ingestion in system_logs periodically via bounded single worker
 		if payload.Sequence%3 == 0 || payload.Sequence <= 2 {
-			go func(sid string, seq int64, count int, ts time.Time) {
-				var srvName string
-				_ = pool.QueryRow(context.Background(), "SELECT COALESCE(name, hostname) FROM servers WHERE id = $1", sid).Scan(&srvName)
-				if srvName == "" {
-					srvName = "node-" + sid[:8]
-				}
-				logs.RecordLog(context.Background(), pool, logs.StructuredLogEntry{
-					Timestamp: ts,
-					Level:     "INFO",
-					Service:   "telemetry-engine",
-					Server:    srvName,
-					ServerID:  sid,
-					Message:   fmt.Sprintf("Ingested %d metric datapoints (sequence %d) from %s into TimescaleDB.", count, seq, srvName),
-				})
-			}(serverID, payload.Sequence, len(payload.Metrics), now)
+			startTelemetryLogWorker(pool)
+			select {
+			case telemetryLogQueue <- telemetryLogEvent{
+				serverID: serverID,
+				seq:      payload.Sequence,
+				count:    len(payload.Metrics),
+				ts:       now,
+			}:
+			default:
+			}
 		}
 
 		realtime.PublishServerUpdated(serverID)
