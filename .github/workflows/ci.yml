@@ -15,8 +15,12 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: server/go.mod
+          # Use the newest 1.26.x patch. go-version-file would pin the exact
+          # go.mod version (1.26.0), and govulncheck fails on stdlib CVEs
+          # that later patch releases fixed.
+          go-version: '1.26.x'
           check-latest: true
+          cache-dependency-path: server/go.sum
 
       - name: Format check
         run: cd server && test -z "$(gofmt -l .)" || (echo "Unformatted Go code detected:" && gofmt -l . && exit 1)
