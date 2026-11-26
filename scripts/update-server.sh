@@ -79,8 +79,17 @@ docker rm "$CID" >/dev/null
 echo "[3/6] Building agent (Docker)..."
 docker run --rm -v "$REPO_DIR/agent:/src:ro" -v "$STAGE:/out" ubuntu:22.04 bash -c '
   set -e
-  apt-get update -qq >/dev/null
-  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq build-essential cmake libssl-dev >/dev/null
+  # Ubuntu mirrors briefly serve mismatched index files while they sync
+  # ("File has unexpected size ... Mirror sync in progress?"), so retry.
+  ok=0
+  for attempt in 1 2 3 4 5; do
+    rm -rf /var/lib/apt/lists/*
+    if apt-get -o Acquire::Retries=3 update -qq >/dev/null; then ok=1; break; fi
+    echo "       apt-get update failed (attempt $attempt/5), retrying in 20s..." >&2
+    sleep 20
+  done
+  [ "$ok" = 1 ] || { echo "apt-get update kept failing; try again later." >&2; exit 1; }
+  DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y -qq build-essential cmake libssl-dev >/dev/null
   cmake -S /src -B /tmp/build -DCMAKE_BUILD_TYPE=Release >/dev/null
   cmake --build /tmp/build -j"$(nproc)" >/dev/null
   cp /tmp/build/sentrix-agent /out/sentrix-agent
