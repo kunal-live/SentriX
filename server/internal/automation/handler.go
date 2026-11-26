@@ -30,6 +30,16 @@ func CanTransitionExecution(from, to string) bool {
 	return false
 }
 
+// mayApprove enforces separation of duties: an OPERATOR cannot approve an
+// execution they triggered. ADMINs may, so a single-admin install still works,
+// but approval is always an explicit second step through the approve endpoint.
+func mayApprove(approverRole, approverEmail, triggeredBy string) bool {
+	if approverRole == "ADMIN" {
+		return true
+	}
+	return approverEmail != triggeredBy
+}
+
 type RunbookStep struct {
 	ID             string `json:"id"`
 	StepNumber     int    `json:"step_number"`
@@ -219,19 +229,16 @@ func HandleExecuteRunbook(pool *pgxpool.Pool) http.HandlerFunc {
 			}
 		}
 
-		var req struct {
-			Approved *bool `json:"approved"`
-		}
-		_ = json.NewDecoder(r.Body).Decode(&req)
-
+		// The request body used to carry {"approved": true}, which let any caller
+		// skip the approval gate. Approval is now only possible through the
+		// separate approve endpoint, so the body is ignored here.
 		now := time.Now().UTC()
-		isApproved := req.Approved != nil && *req.Approved
 
 		var status string
 		var completedAt *time.Time
 		var stepResults []string
 
-		if matched.RequiresApproval && !isApproved {
+		if matched.RequiresApproval {
 			status = "PENDING_APPROVAL"
 			completedAt = nil
 			stepResults = []string{
@@ -320,6 +327,10 @@ func HandleApproveExecution(pool *pgxpool.Pool) http.HandlerFunc {
 				http.Error(w, "execution cannot be approved from status "+ex.Status, http.StatusConflict)
 				return
 			}
+			if !mayApprove(actor.Role, actor.Email, ex.TriggeredBy) {
+				http.Error(w, "forbidden: an operator cannot approve their own execution; ask another operator or an admin", http.StatusForbidden)
+				return
+			}
 
 			_ = json.Unmarshal(existingStepsJSON, &ex.StepResults)
 			ex.StepResults = append(ex.StepResults, approvalSteps...)
@@ -353,6 +364,10 @@ func HandleApproveExecution(pool *pgxpool.Pool) http.HandlerFunc {
 			if ex.ID == execID {
 				if !CanTransitionExecution(ex.Status, "COMPLETED") {
 					http.Error(w, "execution cannot be approved from status "+ex.Status, http.StatusConflict)
+					return
+				}
+				if !mayApprove(actor.Role, actor.Email, ex.TriggeredBy) {
+					http.Error(w, "forbidden: an operator cannot approve their own execution; ask another operator or an admin", http.StatusForbidden)
 					return
 				}
 				ex.Status = "COMPLETED"

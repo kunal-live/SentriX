@@ -136,12 +136,12 @@ int buffer_peek(DiskBuffer *buf, char *out_payload, size_t max_out_len, size_t *
     uint32_t len32 = 0;
     if (fread(&len32, sizeof(uint32_t), 1, fp) != 1) {
         fclose(fp);
-        return -1;
+        return -3; // Truncated/corrupt record header
     }
 
     if (len32 >= max_out_len) {
         fclose(fp);
-        return -2; // Buffer too small
+        return -2; // Record larger than caller buffer: can never be sent
     }
 
     size_t read_bytes = fread(out_payload, 1, len32, fp);
@@ -149,7 +149,7 @@ int buffer_peek(DiskBuffer *buf, char *out_payload, size_t max_out_len, size_t *
         return -1;
     }
 
-    if (read_bytes != len32) return -1;
+    if (read_bytes != len32) return -3; // Truncated/corrupt record body
     out_payload[read_bytes] = '\0';
     if (out_len) *out_len = read_bytes;
 
@@ -234,7 +234,12 @@ int buffer_pop(DiskBuffer *buf) {
         return -1;
     }
 
+#ifdef _WIN32
+    // Windows rename() cannot replace an existing file. On POSIX, rename() is
+    // atomic, so removing first would open a window where a crash loses the
+    // whole spool.
     remove(buf->file_path);
+#endif
     if (rename(temp_path, buf->file_path) != 0) {
         remove(temp_path);
         return -1;

@@ -12,6 +12,8 @@ WorkingDirectory=/var/lib/sentrix
 EnvironmentFile=/etc/sentrix/agent.env
 ExecStart=/opt/sentrix/bin/sentrix-agent
 Restart=always
+# Exit 78 = credential rejected (revoked or re-enrolled). Restarting cannot fix it.
+RestartPreventExitStatus=78
 RestartSec=5
 
 NoNewPrivileges=true

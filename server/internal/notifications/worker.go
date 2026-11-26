@@ -40,58 +40,70 @@ func StartWorker(ctx context.Context, pool *pgxpool.Pool) {
 	}
 }
 
+// jobLease is how long a claimed job is hidden from other pollers. If this
+// process dies mid-delivery, the job becomes due again after the lease.
+const jobLease = 2 * time.Minute
+
 func processDueJobs(ctx context.Context, pool *pgxpool.Pool) {
-	tx, err := pool.Begin(ctx)
+	// Jobs that ran out of attempts without being marked would otherwise sit in
+	// PENDING/RETRYING forever, since the claim below never selects them.
+	if _, err := pool.Exec(ctx, `
+		UPDATE notification_jobs
+		SET status = 'FAILED', last_error = COALESCE(last_error, 'max attempts exhausted'), updated_at = NOW()
+		WHERE status IN ('PENDING', 'RETRYING') AND attempts >= max_attempts
+	`); err != nil {
+		slog.Error("failed to sweep exhausted notification jobs", "error", err)
+	}
+
+	jobs, err := claimDueJobs(ctx, pool)
 	if err != nil {
-		slog.Error("failed to begin notification tx", "error", err)
+		slog.Error("failed to claim notification jobs", "error", err)
 		return
 	}
-	defer tx.Rollback(ctx)
 
-	rows, err := tx.Query(ctx, `
-		SELECT
-			id,
-			channel_id,
-			attempts,
-			max_attempts,
-			payload
-		FROM notification_jobs
-		WHERE status IN ('PENDING', 'RETRYING')
-		  AND attempts < max_attempts
-		  AND next_attempt_at <= NOW()
-		ORDER BY next_attempt_at ASC
-		LIMIT 20
-		FOR UPDATE SKIP LOCKED
-	`)
-
-	if err != nil {
-		slog.Error("failed to query notification jobs", "error", err)
-		return
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var job jobRow
-
-		err := rows.Scan(
-			&job.ID,
-			&job.ChannelID,
-			&job.Attempts,
-			&job.MaxAttempts,
-			&job.Payload,
-		)
-
+	// Each job gets its own transaction: a failure on one job must not roll back
+	// the SENT status of jobs whose webhooks were already delivered.
+	for _, job := range jobs {
+		tx, err := pool.Begin(ctx)
 		if err != nil {
-			slog.Error("failed to scan notification job", "error", err)
+			slog.Error("failed to begin notification job tx", "job_id", job.ID, "error", err)
 			continue
 		}
-
 		processJob(ctx, tx, job)
+		if err := tx.Commit(ctx); err != nil {
+			slog.Error("failed to commit notification job", "job_id", job.ID, "error", err)
+		}
+		_ = tx.Rollback(ctx)
 	}
+}
 
-	if err := tx.Commit(ctx); err != nil {
-		slog.Error("failed to commit notification tx", "error", err)
+// claimDueJobs atomically leases up to 20 due jobs by pushing next_attempt_at
+// forward, and returns them fully read so no result set stays open while the
+// jobs are processed (pgx cannot run other statements on a busy connection).
+func claimDueJobs(ctx context.Context, pool *pgxpool.Pool) ([]jobRow, error) {
+	rows, err := pool.Query(ctx, `
+		UPDATE notification_jobs
+		SET next_attempt_at = NOW() + $1::interval, updated_at = NOW()
+		WHERE id IN (
+			SELECT id
+			FROM notification_jobs
+			WHERE status IN ('PENDING', 'RETRYING')
+			  AND attempts < max_attempts
+			  AND next_attempt_at <= NOW()
+			ORDER BY next_attempt_at ASC
+			LIMIT 20
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, channel_id, attempts, max_attempts, payload
+	`, fmt.Sprintf("%d seconds", int(jobLease.Seconds())))
+	if err != nil {
+		return nil, err
 	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (jobRow, error) {
+		var job jobRow
+		err := row.Scan(&job.ID, &job.ChannelID, &job.Attempts, &job.MaxAttempts, &job.Payload)
+		return job, err
+	})
 }
 
 func processJob(ctx context.Context, tx pgx.Tx, job jobRow) {

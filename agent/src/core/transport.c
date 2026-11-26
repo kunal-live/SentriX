@@ -2,6 +2,7 @@
 #define _GNU_SOURCE
 #endif
 
+#include "transport.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -143,10 +144,13 @@ int http_request(
     size_t response_size
 );
 
-int send_telemetry(const char *host, int port, const char *path, const char *json_payload, const char *auth_token) {
+TxResult send_telemetry(const char *host, int port, const char *path, const char *json_payload, const char *auth_token) {
     char response[1024];
     int status = http_request("POST", host, port, path, auth_token, json_payload, response, sizeof(response));
-    return (status >= 200 && status < 300) ? 0 : -1;
+    if (status >= 200 && status < 300) return TX_OK;
+    if (status == 401 || status == 403) return TX_AUTH;
+    if (status <= 0 || status == 408 || status == 429 || status >= 500) return TX_RETRY;
+    return TX_REJECTED;
 }
 
 static int write_all_data(

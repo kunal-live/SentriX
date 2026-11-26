@@ -75,15 +75,28 @@ export const RunbooksPage: React.FC = () => {
     if (!executingRunbook) return;
     try {
       setRunningAction(true);
-      const res = await api.post(`/runbooks/${executingRunbook.id}/execute`, {
-        approved: approvedGate || !executingRunbook.requires_approval,
-      });
+      // Approval is never granted inline; gated runbooks come back as
+      // PENDING_APPROVAL and must be approved from the execution history.
+      const res = await api.post(`/runbooks/${executingRunbook.id}/execute`, {});
       setExecutionResult(res.data);
       fetchData();
     } catch (err: any) {
       alert('Runbook execution failed: ' + err.message);
     } finally {
       setRunningAction(false);
+    }
+  };
+
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const handleApprove = async (execId: string) => {
+    try {
+      setApprovingId(execId);
+      await api.post(`/automation/executions/${execId}/approve`, {});
+      fetchData();
+    } catch (err: any) {
+      alert('Approval failed: ' + err.message);
+    } finally {
+      setApprovingId(null);
     }
   };
 
@@ -263,9 +276,24 @@ export const RunbooksPage: React.FC = () => {
                     <td className="px-6 py-4 font-medium text-white">{ex.runbook_title}</td>
                     <td className="px-6 py-4 font-mono text-xs text-gray-400">{ex.triggered_by}</td>
                     <td className="px-6 py-4">
-                      <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                        {ex.status}
-                      </span>
+                      {ex.status === 'PENDING_APPROVAL' ? (
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            {ex.status}
+                          </span>
+                          <button
+                            onClick={() => handleApprove(ex.id)}
+                            disabled={approvingId === ex.id}
+                            className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white"
+                          >
+                            {approvingId === ex.id ? 'Approving…' : 'Approve'}
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                          {ex.status}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-xs text-gray-500">
                       {new Date(ex.started_at).toLocaleString()}
@@ -344,7 +372,11 @@ export const RunbooksPage: React.FC = () => {
                 <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 space-y-2">
                   <div className="flex items-center gap-2 text-emerald-400 text-xs font-bold">
                     <CheckCircle2 className="w-4 h-4" />
-                    <span>Runbook Executed Successfully ({executionResult.id})</span>
+                    <span>
+                      {executionResult.status === 'PENDING_APPROVAL'
+                        ? `Submitted for approval (${executionResult.id}). Approve it from Execution History.`
+                        : `Runbook Executed Successfully (${executionResult.id})`}
+                    </span>
                   </div>
                   <div className="font-mono text-xs text-gray-300 space-y-1 pl-6">
                     {executionResult.step_results.map((r, i) => (

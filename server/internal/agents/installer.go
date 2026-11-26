@@ -151,6 +151,8 @@ WorkingDirectory=/var/lib/sentrix
 EnvironmentFile=/etc/sentrix/agent.env
 ExecStart=/opt/sentrix/bin/sentrix-agent
 Restart=always
+# Exit 78 = credential rejected (revoked or re-enrolled). Restarting cannot fix it.
+RestartPreventExitStatus=78
 RestartSec=5
 
 NoNewPrivileges=true
@@ -201,8 +203,13 @@ SERVER_PORT="${SERVER_PORT%%/*}"
 
 # Determine TLS mode
 USE_TLS="true"
+ALLOW_INSECURE_HTTP="0"
 if echo "$SENTRIX_SERVER" | grep -qi '^http://'; then
   USE_TLS="false"
+  # The agent refuses to send credentials over plaintext HTTP unless this
+  # explicit opt-in is set, so an http:// server URL needs it to report at all.
+  ALLOW_INSECURE_HTTP="1"
+  echo "WARNING: Server URL is plain HTTP; agent credentials will be sent unencrypted." >&2
 fi
 
 (
@@ -211,6 +218,7 @@ fi
 SENTRIX_SERVER_HOST=${SERVER_HOST}
 SENTRIX_SERVER_PORT=${SERVER_PORT}
 SENTRIX_USE_TLS=${USE_TLS}
+SENTRIX_ALLOW_INSECURE_HTTP=${ALLOW_INSECURE_HTTP}
 SENTRIX_AGENT_ID=${AGENT_ID}
 SENTRIX_AGENT_CREDENTIAL=${CREDENTIAL}
 EOF

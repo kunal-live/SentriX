@@ -40,3 +40,17 @@ func TestHandleInstallScriptRejectsMalformedHost(t *testing.T) {
 		t.Fatalf("expected valid host in install script, got %q", rr.Body.String()[:120])
 	}
 }
+
+// An http:// server URL must also opt the agent into plaintext transport,
+// otherwise the agent refuses to send telemetry and never shows up.
+func TestGenerateInstallScriptEnablesInsecureHTTPForPlainHTTP(t *testing.T) {
+	script := generateInstallScript("http://192.168.1.10:8080")
+	for _, want := range []string{
+		`ALLOW_INSECURE_HTTP="1"`,
+		`SENTRIX_ALLOW_INSECURE_HTTP=${ALLOW_INSECURE_HTTP}`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("install script missing %q", want)
+		}
+	}
+}

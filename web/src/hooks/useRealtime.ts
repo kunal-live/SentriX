@@ -7,6 +7,10 @@ export type RealtimeStatus = 'connecting' | 'connected' | 'disconnected';
 
 const WS_URL = `${API_BASE.replace(/^http/, 'ws')}/ws`;
 
+// A connection must stay open this long before the reconnect backoff resets.
+const STABLE_CONNECTION_MS = 30_000;
+const MAX_BACKOFF_MS = 30_000;
+
 interface WsTicketResponse {
   ticket: string;
   expires_in: number;
@@ -75,7 +79,9 @@ export function useRealtime(): RealtimeStatus {
         clearTimeout(reconnectTimer);
       }
       setStatus('disconnected');
-      const delay = Math.min(1000 * 2 ** attempts, 15000);
+      // Exponential backoff with jitter, so many tabs don't reconnect in lockstep.
+      const base = Math.min(1000 * 2 ** attempts, MAX_BACKOFF_MS);
+      const delay = base / 2 + Math.random() * (base / 2);
       attempts += 1;
       reconnectTimer = setTimeout(connect, delay);
     }
@@ -99,14 +105,18 @@ export function useRealtime(): RealtimeStatus {
 
         const url = `${WS_URL}?ticket=${encodeURIComponent(ticketResponse.ticket)}`;
         ws = new WebSocket(url);
+        let openedAt = 0;
 
         ws.onopen = () => {
           if (disposed) {
             return;
           }
 
+          // Don't reset the backoff here: a socket the server closes right after
+          // the handshake would then reconnect every second forever. The reset
+          // happens in onclose, only if the connection stayed up long enough.
+          openedAt = Date.now();
           setStatus('connected');
-          attempts = 0;
         };
 
         ws.onmessage = (messageEvent) => {
@@ -118,10 +128,18 @@ export function useRealtime(): RealtimeStatus {
           }
         };
 
-        ws.onclose = () => {
+        ws.onclose = (closeEvent) => {
           if (disposed) {
             return;
           }
+          const uptime = openedAt ? Date.now() - openedAt : 0;
+          if (uptime >= STABLE_CONNECTION_MS) {
+            attempts = 0;
+          }
+          // Logged so the cause of server-side closes can be diagnosed.
+          console.debug(
+            `[realtime] socket closed code=${closeEvent.code} reason="${closeEvent.reason}" uptime=${uptime}ms`
+          );
           scheduleReconnect();
         };
 

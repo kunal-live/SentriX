@@ -332,8 +332,8 @@ func main() {
 
 				// Phase 15: Enterprise Identity & Security Center
 				r.Get("/security/events", security.HandleListSecurityEvents(pool))
-				r.Get("/security/sessions", security.HandleListSessions(pool))
-				r.Post("/security/sessions/{id}/revoke", security.HandleRevokeSession(pool))
+				r.Get("/security/sessions", auth.HandleListSessions(pool))
+				r.Post("/security/sessions/{id}/revoke", auth.HandleRevokeSession(pool))
 				r.Get("/security/sso", security.HandleGetSSOConfig(pool))
 
 				// Phase 16: Multi-Tenancy & Organizations

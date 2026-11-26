@@ -2,6 +2,7 @@ package incidents
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -158,22 +159,40 @@ func HandleUpdateIncident(pool *pgxpool.Pool) http.HandlerFunc {
 		defer tx.Rollback(ctx)
 
 		var serverID, currentStatus string
-		err = tx.QueryRow(ctx, `SELECT server_id, status FROM incidents WHERE id = $1`, incidentID).Scan(&serverID, &currentStatus)
+		// Lock the row so the transition check below can't race a concurrent change.
+		err = tx.QueryRow(ctx, `SELECT server_id, status FROM incidents WHERE id = $1 FOR UPDATE`, incidentID).Scan(&serverID, &currentStatus)
 		if err != nil {
 			api.RespondError(w, r, http.StatusNotFound, "INCIDENT_NOT_FOUND", "Incident not found")
 			return
 		}
 
+		// Any failed statement aborts the transaction, so stop at the first error
+		// instead of discovering it as an opaque commit failure.
+		failed := func(err error) bool {
+			if err == nil {
+				return false
+			}
+			slog.Error("incident update failed", "incident_id", incidentID, "error", err)
+			api.RespondError(w, r, http.StatusInternalServerError, "DB_ERROR", "Failed to update incident")
+			return true
+		}
+
 		if req.AssigneeName != nil {
-			_, _ = tx.Exec(ctx, `UPDATE incidents SET assignee_name = $2, updated_at = NOW() WHERE id = $1`, incidentID, *req.AssigneeName)
-			_ = WriteTimelineTx(ctx, tx, incidentID, &actor.ID, "SYSTEM", "Assignee changed to "+*req.AssigneeName)
+			_, err := tx.Exec(ctx, `UPDATE incidents SET assignee_name = $2, updated_at = NOW() WHERE id = $1`, incidentID, *req.AssigneeName)
+			if failed(err) || failed(WriteTimelineTx(ctx, tx, incidentID, &actor.ID, "SYSTEM", "Assignee changed to "+*req.AssigneeName)) {
+				return
+			}
 		}
 		if req.Severity != nil {
-			_, _ = tx.Exec(ctx, `UPDATE incidents SET severity = $2, updated_at = NOW() WHERE id = $1`, incidentID, *req.Severity)
-			_ = WriteTimelineTx(ctx, tx, incidentID, &actor.ID, "SYSTEM", "Severity updated to "+*req.Severity)
+			_, err := tx.Exec(ctx, `UPDATE incidents SET severity = $2, updated_at = NOW() WHERE id = $1`, incidentID, *req.Severity)
+			if failed(err) || failed(WriteTimelineTx(ctx, tx, incidentID, &actor.ID, "SYSTEM", "Severity updated to "+*req.Severity)) {
+				return
+			}
 		}
 		if req.Title != nil {
-			_, _ = tx.Exec(ctx, `UPDATE incidents SET title = $2, updated_at = NOW() WHERE id = $1`, incidentID, *req.Title)
+			if _, err := tx.Exec(ctx, `UPDATE incidents SET title = $2, updated_at = NOW() WHERE id = $1`, incidentID, *req.Title); failed(err) {
+				return
+			}
 		}
 		if req.Status != nil {
 			statusUpper := strings.ToUpper(strings.TrimSpace(*req.Status))
@@ -182,15 +201,32 @@ func HandleUpdateIncident(pool *pgxpool.Pool) http.HandlerFunc {
 					api.RespondError(w, r, http.StatusConflict, "INVALID_STATE", err.Error())
 					return
 				}
+				var err error
 				switch statusUpper {
 				case "RESOLVED":
-					_, _ = tx.Exec(ctx, `UPDATE incidents SET status = $2, resolved_at = NOW(), resolved_by = $3, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper, actor.ID)
+					_, err = tx.Exec(ctx, `UPDATE incidents SET status = $2, resolved_at = NOW(), resolved_by = $3, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper, actor.ID)
 				case "ACKNOWLEDGED":
-					_, _ = tx.Exec(ctx, `UPDATE incidents SET status = $2, acknowledged_at = NOW(), acknowledged_by = $3, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper, actor.ID)
+					_, err = tx.Exec(ctx, `UPDATE incidents SET status = $2, acknowledged_at = NOW(), acknowledged_by = $3, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper, actor.ID)
+				case "OPEN":
+					// Reopen: clear the previous resolution/acknowledgement so the
+					// timestamps don't contradict the status.
+					_, err = tx.Exec(ctx, `
+						UPDATE incidents
+						SET status = 'OPEN', resolved_at = NULL, resolved_by = NULL,
+						    acknowledged_at = NULL, acknowledged_by = NULL, updated_at = NOW()
+						WHERE id = $1`, incidentID)
+					if err != nil {
+						// Most likely a newer incident is already open for the same rule/check.
+						slog.Warn("incident reopen rejected", "incident_id", incidentID, "error", err)
+						api.RespondError(w, r, http.StatusConflict, "REOPEN_CONFLICT", "Cannot reopen: another open incident already exists for this alert or check")
+						return
+					}
 				default:
-					_, _ = tx.Exec(ctx, `UPDATE incidents SET status = $2, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper)
+					_, err = tx.Exec(ctx, `UPDATE incidents SET status = $2, updated_at = NOW() WHERE id = $1`, incidentID, statusUpper)
 				}
-				_ = WriteTimelineTx(ctx, tx, incidentID, &actor.ID, statusUpper, "Status transitioned to "+statusUpper+" by "+actor.Email)
+				if failed(err) || failed(WriteTimelineTx(ctx, tx, incidentID, &actor.ID, statusUpper, "Status transitioned to "+statusUpper+" by "+actor.Email)) {
+					return
+				}
 			}
 		}
 

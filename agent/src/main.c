@@ -11,10 +11,47 @@
 #include "collector.h"
 #include "checks.h"
 #include "buffer.h"
+#include "transport.h"
 #include <time.h>
+#include <signal.h>
 
 extern void build_telemetry_json(char *buffer, size_t size, const char *agent_id, uint64_t seq, const char *restart_nonce, const SystemMetrics *m);
-extern int send_telemetry(const char *host, int port, const char *path, const char *json_payload, const char *auth_token);
+
+/* Exit status for a rejected credential. The systemd unit lists it in
+ * RestartPreventExitStatus so a revoked agent stops instead of crash-looping. */
+#define EXIT_AUTH_REJECTED 78
+
+/* Max spooled frames sent per cycle, so a large backlog can't block metric
+ * collection for minutes. */
+#define MAX_DRAIN_PER_CYCLE 30
+
+static volatile sig_atomic_t g_stop = 0;
+
+static void handle_stop_signal(int sig) {
+    (void)sig;
+    g_stop = 1;
+}
+
+static void install_signal_handlers(void) {
+#ifndef _WIN32
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = handle_stop_signal;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
+    /* A peer reset during send()/SSL_write() must surface as an error return,
+     * not kill the process. */
+    signal(SIGPIPE, SIG_IGN);
+#endif
+}
+
+/* Sleep up to `seconds`, waking early if a stop signal arrives. */
+static void interruptible_sleep(int seconds) {
+    for (int i = 0; i < seconds && !g_stop; i++) {
+        sleep(1);
+    }
+}
 
 static void generate_restart_nonce(char *out, size_t out_len) {
     unsigned char rnd[16] = {0};
@@ -139,9 +176,11 @@ static void maybe_drop_privileges(void) {
             pw = getpwnam("nobody");
         }
         if (pw) {
-            if (setgid(pw->pw_gid) == 0 && setuid(pw->pw_uid) == 0) {
-                printf("Security: Dropped root privileges to user '%s' (UID %d, GID %d)\n", pw->pw_name, pw->pw_uid, pw->pw_gid);
+            if (setgroups(0, NULL) != 0 || setgid(pw->pw_gid) != 0 || setuid(pw->pw_uid) != 0) {
+                fprintf(stderr, "FATAL: Failed to drop root privileges to user '%s'. Refusing to run as root.\n", pw->pw_name);
+                exit(1);
             }
+            printf("Security: Dropped root privileges to user '%s' (UID %d, GID %d)\n", pw->pw_name, pw->pw_uid, pw->pw_gid);
         }
     }
 #endif
@@ -226,6 +265,7 @@ int main(int argc, char *argv[]) {
     printf("Target Server: %s:%d (TLS: %s)\n", config.server_host, config.server_port, config.use_tls ? "ENABLED" : "DISABLED");
     printf("Agent ID:      %s\n", config.agent_id);
 
+    install_signal_handlers();
     maybe_drop_privileges();
 
     DiskBuffer spool_buf;
@@ -261,7 +301,9 @@ int main(int argc, char *argv[]) {
     } AgentTransportState;
     AgentTransportState transport_state = (spool_buf.items_queued > 0) ? AGENT_STATE_DRAINING : AGENT_STATE_ONLINE;
 
-    while (1) {
+    int exit_code = 0;
+
+    while (!g_stop) {
         printf("Collecting metrics (seq %lu)...\n", (unsigned long)sequence);
 
         collect_cpu(&metrics.cpu_utilization);
@@ -273,38 +315,75 @@ int main(int argc, char *argv[]) {
 
         build_telemetry_json(json_buffer, sizeof(json_buffer), config.agent_id, sequence, restart_nonce, &metrics);
 
-        // 1. Drain offline spool buffer if connected
+        int link_up = 1; /* cleared when the server is unreachable this cycle */
+
+        // 1. Drain the offline spool (bounded per cycle).
         if (spool_buf.items_queued > 0 && transport_state != AGENT_STATE_DRAINING) {
             transport_state = AGENT_STATE_DRAINING;
             printf("[State] Transition -> DRAINING_BUFFER (%d queued frames)\n", spool_buf.items_queued);
         }
-        while (spool_buf.items_queued > 0) {
+        for (int drained = 0; spool_buf.items_queued > 0 && drained < MAX_DRAIN_PER_CYCLE && !g_stop; drained++) {
             char spooled_json[4096];
             size_t spooled_len = 0;
-            if (buffer_peek(&spool_buf, spooled_json, sizeof(spooled_json), &spooled_len) == 0) {
-                if (send_telemetry(config.server_host, config.server_port, "/api/v1/agent/telemetry", spooled_json, config.auth_token) == 0) {
-                    printf("[Spool] Drained queued metric frame (%d remaining)\n", spool_buf.items_queued - 1);
-                    buffer_pop(&spool_buf);
-                } else {
-                    if (transport_state != AGENT_STATE_SPOOLING) {
-                        transport_state = AGENT_STATE_SPOOLING;
-                        printf("[State] Transition -> OFFLINE_SPOOLING\n");
-                    }
-                    printf("[Spool] Connection not ready to drain queue. Retrying next cycle.\n");
+            int peek = buffer_peek(&spool_buf, spooled_json, sizeof(spooled_json), &spooled_len);
+            if (peek == -1) {
+                printf("[Spool] Transient read error; will retry next cycle.\n");
+                break;
+            }
+            if (peek != 0) {
+                /* -2 oversized / -3 corrupt: unreadable forever, discard it. */
+                printf("[Spool] Discarding unreadable spooled record (code %d).\n", peek);
+                if (buffer_pop(&spool_buf) != 0) {
+                    printf("[Spool] Failed to remove record; will retry next cycle.\n");
                     break;
                 }
-            } else {
-                buffer_pop(&spool_buf); // corrupted record, discard
+                continue;
+            }
+
+            TxResult r = send_telemetry(config.server_host, config.server_port, "/api/v1/agent/telemetry", spooled_json, config.auth_token);
+            if (r == TX_AUTH) {
+                fprintf(stderr, "FATAL: Server rejected the agent credential (401/403). The agent was revoked or re-enrolled; re-run the installer with a new token.\n");
+                exit_code = EXIT_AUTH_REJECTED;
+                g_stop = 1;
+                break;
+            }
+            if (r == TX_RETRY) {
+                link_up = 0;
+                printf("[Spool] Server unreachable; keeping %d queued frames for next cycle.\n", spool_buf.items_queued);
+                break;
+            }
+            /* TX_OK, or TX_REJECTED (e.g. 409 stale sequence): either way this
+             * frame must leave the queue, or it blocks everything behind it. */
+            if (r == TX_REJECTED) {
+                printf("[Spool] Server permanently rejected a queued frame; dropping it.\n");
+            }
+            if (buffer_pop(&spool_buf) != 0) {
+                /* Without this break, the same frame would be resent in a tight loop. */
+                printf("[Spool] Failed to remove sent record; will retry next cycle.\n");
+                break;
             }
         }
+        if (g_stop) break;
 
-        // 2. Transmit current telemetry frame or buffer on network partition
-        if (send_telemetry(config.server_host, config.server_port, "/api/v1/agent/telemetry", json_buffer, config.auth_token) == 0) {
-            if (transport_state != AGENT_STATE_ONLINE) {
-                transport_state = AGENT_STATE_ONLINE;
-                printf("[State] Transition -> ONLINE_STREAMING\n");
+        // 2. Send the current frame, or spool it if the server is unreachable.
+        TxResult r = link_up
+            ? send_telemetry(config.server_host, config.server_port, "/api/v1/agent/telemetry", json_buffer, config.auth_token)
+            : TX_RETRY;
+        if (r == TX_AUTH) {
+            fprintf(stderr, "FATAL: Server rejected the agent credential (401/403). The agent was revoked or re-enrolled; re-run the installer with a new token.\n");
+            exit_code = EXIT_AUTH_REJECTED;
+            break;
+        } else if (r == TX_OK || r == TX_REJECTED) {
+            if (r == TX_REJECTED) {
+                printf("Server rejected the telemetry frame; not spooling it.\n");
+            } else {
+                printf("Telemetry sent successfully.\n");
             }
-            printf("Telemetry sent successfully.\n");
+            AgentTransportState next = spool_buf.items_queued > 0 ? AGENT_STATE_DRAINING : AGENT_STATE_ONLINE;
+            if (transport_state != next) {
+                transport_state = next;
+                printf("[State] Transition -> %s\n", next == AGENT_STATE_ONLINE ? "ONLINE_STREAMING" : "DRAINING_BUFFER");
+            }
         } else {
             if (transport_state != AGENT_STATE_SPOOLING) {
                 transport_state = AGENT_STATE_SPOOLING;
@@ -320,14 +399,16 @@ int main(int argc, char *argv[]) {
         }
 
         // Execute synthetic checks cycle every 3 intervals (30 seconds)
-        if (sequence % 3 == 0) {
+        if (sequence % 3 == 0 && link_up) {
             printf("Running synthetic checks cycle...\n");
             run_checks_cycle(config.server_host, config.server_port, config.agent_id, config.auth_token);
         }
 
         sequence++;
-        sleep(10); // 10 second telemetry cycle
+        interruptible_sleep(10); // 10 second telemetry cycle
     }
 
-    return 0;
+    printf("SentriX Agent shutting down (exit %d).\n", exit_code);
+    fflush(stdout);
+    return exit_code;
 }
