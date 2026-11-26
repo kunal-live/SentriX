@@ -153,6 +153,35 @@ TxResult send_telemetry(const char *host, int port, const char *path, const char
     return TX_REJECTED;
 }
 
+TxResult send_processes(const char *host, int port, const char *auth_token,
+                        const ProcessInfo *procs, int count, int total_count) {
+    cJSON *root = cJSON_CreateObject();
+    if (!root) return TX_RETRY;
+    cJSON_AddNumberToObject(root, "total", total_count);
+    cJSON *arr = cJSON_AddArrayToObject(root, "processes");
+    for (int i = 0; i < count; i++) {
+        cJSON *p = cJSON_CreateObject();
+        cJSON_AddNumberToObject(p, "pid", procs[i].pid);
+        cJSON_AddStringToObject(p, "name", procs[i].name);
+        cJSON_AddStringToObject(p, "user", procs[i].user);
+        cJSON_AddNumberToObject(p, "cpu", procs[i].cpu_percent);
+        cJSON_AddNumberToObject(p, "mem_rss_bytes", (double)procs[i].mem_rss_bytes);
+        cJSON_AddStringToObject(p, "state", procs[i].state);
+        cJSON_AddItemToArray(arr, p);
+    }
+    char *body = cJSON_PrintUnformatted(root);
+    cJSON_Delete(root);
+    if (!body) return TX_RETRY;
+
+    char response[512];
+    int status = http_request("POST", host, port, "/api/v1/agent/processes", auth_token, body, response, sizeof(response));
+    free(body);
+    if (status >= 200 && status < 300) return TX_OK;
+    if (status == 401 || status == 403) return TX_AUTH;
+    if (status <= 0 || status == 408 || status == 429 || status >= 500) return TX_RETRY;
+    return TX_REJECTED;
+}
+
 static int write_all_data(
 #ifdef SENTRIX_ENABLE_TLS
     int use_tls, SSL *ssl,

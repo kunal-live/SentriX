@@ -103,6 +103,7 @@ export function ServerDetailPage() {
   const [maintenanceOpen, setMaintenanceOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Search & Filter
   const [processSearch, setProcessSearch] = useState('');
@@ -147,13 +148,16 @@ export function ServerDetailPage() {
   async function handleDeleteServer() {
     if (!serverId) return;
     setDeleting(true);
+    setDeleteError(null);
     try {
       await mutateJSON(`/servers/${serverId}`, 'DELETE');
       queryClient.invalidateQueries({ queryKey: ['servers'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['incidents'] });
       navigate('/');
     } catch (err) {
       console.error(err);
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete server.');
     } finally {
       setDeleting(false);
     }
@@ -713,6 +717,11 @@ export function ServerDetailPage() {
             <p className="text-xs text-muted">
               This will remove <strong className="text-white">{server.name}</strong> from the fleet overview and purge its active status.
             </p>
+            {deleteError && (
+              <p className="text-xs text-critical bg-critical/10 border border-critical/30 rounded-lg px-3 py-2">
+                {deleteError}
+              </p>
+            )}
             <div className="flex justify-end gap-2.5 pt-2">
               <button
                 onClick={() => setDeleteConfirm(false)}

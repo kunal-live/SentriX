@@ -1,6 +1,8 @@
 #ifndef SENTRIX_TRANSPORT_H
 #define SENTRIX_TRANSPORT_H
 
+#include "collector.h"
+
 /*
  * Outcome of a telemetry POST. The caller's state machine needs to tell these
  * apart: a network blip should be retried, but a frame the server rejected
@@ -14,5 +16,9 @@ typedef enum {
 } TxResult;
 
 TxResult send_telemetry(const char *host, int port, const char *path, const char *json_payload, const char *auth_token);
+
+/* Sends a snapshot of the top processes. Not spooled: only the latest list matters. */
+TxResult send_processes(const char *host, int port, const char *auth_token,
+                        const ProcessInfo *procs, int count, int total_count);
 
 #endif

@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sentrix/server/internal/api"
@@ -307,5 +309,50 @@ func HandleBatchLogs(pool *pgxpool.Pool) http.HandlerFunc {
 			"status":   "accepted",
 			"ingested": len(req.Logs),
 		})
+	}
+}
+
+type serverLogItem struct {
+	Timestamp time.Time `json:"timestamp"`
+	Level     string    `json:"level"`
+	Unit      string    `json:"unit"`
+	Message   string    `json:"message"`
+}
+
+// HandleServerLogs returns the most recent log lines recorded for one server.
+// GET /api/v1/servers/{serverID}/logs
+func HandleServerLogs(pool *pgxpool.Pool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		serverID := chi.URLParam(r, "serverID")
+		if _, err := uuid.Parse(serverID); err != nil {
+			http.Error(w, "invalid server ID format", http.StatusBadRequest)
+			return
+		}
+
+		rows, err := pool.Query(r.Context(), `
+			SELECT timestamp, level, service, message
+			FROM system_logs
+			WHERE server_id = $1
+			ORDER BY timestamp DESC
+			LIMIT 200
+		`, serverID)
+		if err != nil {
+			slog.Error("failed to query server logs", "server_id", serverID, "error", err)
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
+
+		items := []serverLogItem{}
+		for rows.Next() {
+			var it serverLogItem
+			if err := rows.Scan(&it.Timestamp, &it.Level, &it.Unit, &it.Message); err != nil {
+				continue
+			}
+			items = append(items, it)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(items)
 	}
 }

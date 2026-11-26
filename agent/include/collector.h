@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#define MAX_TOP_PROCESSES 10
+#define MAX_TOP_PROCESSES 15
 
 typedef struct {
     int pid;
@@ -45,7 +45,10 @@ int collect_disk(uint64_t *total, uint64_t *used);
 int collect_network(uint64_t *rx, uint64_t *tx);
 int collect_system_load(double *load_1m);
 int collect_uptime(uint64_t *seconds);
-int collect_top_processes(ProcessInfo *procs, int max_count, int *out_count);
+/* Fills procs with the busiest processes (by CPU since the previous call, then
+ * resident memory). CPU is per-core percent like top(1), so it is 0 on the
+ * first call. total_count receives the number of processes seen (may be NULL). */
+int collect_top_processes(ProcessInfo *procs, int max_count, int *out_count, int *total_count);
 int collect_agent_health(AgentHealth *health, int current_queue_size, int64_t last_ack_lag_ms);
 
 #endif

@@ -198,6 +198,9 @@ static void print_usage(const char *prog) {
 }
 
 int main(int argc, char *argv[]) {
+    /* Line-buffer stdout so logs reach journald immediately instead of in
+     * multi-minute batches when running as a service. */
+    setvbuf(stdout, NULL, _IOLBF, 0);
     printf("SentriX Agent v1.0.0 starting...\n");
 
     AgentConfig config;
@@ -402,6 +405,22 @@ int main(int argc, char *argv[]) {
         if (sequence % 3 == 0 && link_up) {
             printf("Running synthetic checks cycle...\n");
             run_checks_cycle(config.server_host, config.server_port, config.agent_id, config.auth_token);
+        }
+
+        // Top processes every 3 cycles (30s). The collector is also sampled on
+        // the cycle before, so the CPU percentages cover a ~10s window.
+        if ((sequence + 1) % 3 == 0 || sequence % 3 == 0) {
+            int proc_count = 0, proc_total = 0;
+            collect_top_processes(metrics.top_processes, MAX_TOP_PROCESSES, &proc_count, &proc_total);
+            if (sequence % 3 == 0 && link_up && proc_count > 0) {
+                TxResult pr = send_processes(config.server_host, config.server_port, config.auth_token,
+                                             metrics.top_processes, proc_count, proc_total);
+                if (pr == TX_AUTH) {
+                    fprintf(stderr, "FATAL: Server rejected the agent credential (401/403). The agent was revoked or re-enrolled; re-run the installer with a new token.\n");
+                    exit_code = EXIT_AUTH_REJECTED;
+                    break;
+                }
+            }
         }
 
         sequence++;

@@ -226,6 +226,7 @@ func main() {
 				r.Post("/telemetry/batch", metrics.HandleBatchTelemetry(pool))
 				r.Get("/agent/checks", checks.HandleAgentChecks(pool))
 				r.Post("/agent/check-results", checks.HandleAgentCheckResults(pool))
+				r.Post("/agent/processes", metrics.HandleAgentProcesses(pool))
 			})
 
 			// Telemetry ingestion endpoints (authenticated via Agent credential OR User JWT)
@@ -256,6 +257,8 @@ func main() {
 				r.Get("/dashboard/summary", health.HandleDashboardSummary(pool))
 				r.Get("/servers", servers.HandleListServers(pool))
 				r.Get("/servers/{serverID}/metrics", metrics.HandleServerMetrics(pool))
+				r.Get("/servers/{serverID}/processes", metrics.HandleServerProcesses(pool))
+				r.Get("/servers/{serverID}/logs", logs.HandleServerLogs(pool))
 				r.Get("/metrics/query", metrics.HandleQueryMetrics(pool))
 				r.Get("/incidents", incidents.HandleListIncidents(pool))
 				r.Get("/alerts/rules", alerts.HandleListRules(pool))

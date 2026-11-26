@@ -120,21 +120,16 @@ export function EnrollServerModal({ isOpen, onClose }: EnrollServerModalProps) {
               <span className="text-xs font-mono uppercase tracking-wider text-text-dim">
                 2. Run On Target Linux Server
               </span>
-              <span className="text-[11px] text-muted flex items-center gap-1 font-mono">
-                <Terminal size={12} /> root / sudo
-              </span>
-            </div>
-
-            <div className="relative group">
-              <pre className="p-4 rounded-xl bg-background border border-border font-mono text-xs text-emerald-400 whitespace-pre-wrap leading-relaxed overflow-x-auto selection:bg-primary/30">
-                {installCommand || 'Preparing install script...'}
-              </pre>
-
-              <button
-                onClick={handleCopy}
-                disabled={!installCommand}
-                className="absolute top-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-border-strong hover:border-primary text-xs font-mono text-white transition-all shadow-md active:scale-95"
-              >
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] text-muted flex items-center gap-1 font-mono">
+                  <Terminal size={12} /> root / sudo
+                </span>
+                {/* Kept outside the command box so it never covers the command text. */}
+                <button
+                  onClick={handleCopy}
+                  disabled={!installCommand}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-border-strong hover:border-primary text-xs font-mono text-white transition-all shadow-md active:scale-95 disabled:opacity-50"
+                >
                 {copied ? (
                   <>
                     <Check size={13} className="text-healthy" />
@@ -146,8 +141,14 @@ export function EnrollServerModal({ isOpen, onClose }: EnrollServerModalProps) {
                     <span>Copy Command</span>
                   </>
                 )}
-              </button>
+                </button>
+              </div>
             </div>
+
+            {/* break-all: the token has no spaces, so it must be allowed to wrap anywhere. */}
+            <pre className="p-4 rounded-xl bg-background border border-border font-mono text-xs text-emerald-400 whitespace-pre-wrap break-all leading-relaxed selection:bg-primary/30">
+              {installCommand || 'Preparing install script...'}
+            </pre>
           </div>
 
           {/* Instructions checklist */}

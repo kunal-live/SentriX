@@ -2,6 +2,7 @@ package servers
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -96,18 +97,41 @@ func HandleDeleteServer(pool *pgxpool.Pool) http.HandlerFunc {
 
 		// Retrieve associated agent ID to revoke credential upon server deletion
 		var agentID *string
-		_ = tx.QueryRow(ctx, "SELECT agent_id FROM servers WHERE id = $1", serverID).Scan(&agentID)
+		if err := tx.QueryRow(ctx, "SELECT agent_id FROM servers WHERE id = $1", serverID).Scan(&agentID); err != nil {
+			http.Error(w, "server not found", http.StatusNotFound)
+			return
+		}
 
-		// Clean up dependent records
-		_, _ = tx.Exec(ctx, "DELETE FROM checks WHERE server_id = $1", serverID)
-		_, _ = tx.Exec(ctx, "DELETE FROM incidents WHERE server_id = $1", serverID)
-		_, _ = tx.Exec(ctx, "DELETE FROM metric_cpu WHERE server_id = $1", serverID)
-		_, _ = tx.Exec(ctx, "DELETE FROM metric_memory WHERE server_id = $1", serverID)
-		_, _ = tx.Exec(ctx, "DELETE FROM metric_disk WHERE server_id = $1", serverID)
-		_, _ = tx.Exec(ctx, "DELETE FROM metric_network WHERE server_id = $1", serverID)
+		// Delete dependents children-first. Order matters: alert/check states
+		// point at incidents, and check incidents point at checks, without
+		// ON DELETE CASCADE. Any failure aborts the transaction, so every
+		// statement is checked and reported instead of failing later.
+		steps := []struct{ what, sql string }{
+			{"alert states", `DELETE FROM alert_states WHERE server_id = $1
+				OR incident_id IN (SELECT id FROM incidents WHERE server_id = $1)`},
+			{"check states", `DELETE FROM check_states WHERE server_id = $1
+				OR incident_id IN (SELECT id FROM incidents WHERE server_id = $1)
+				OR check_id IN (SELECT id FROM checks WHERE server_id = $1)`},
+			{"incidents", `DELETE FROM incidents WHERE server_id = $1
+				OR root_check_id IN (SELECT id FROM checks WHERE server_id = $1)`},
+			{"check results", `DELETE FROM check_results WHERE server_id = $1`},
+			{"checks", `DELETE FROM checks WHERE server_id = $1`},
+			{"cpu metrics", `DELETE FROM metric_cpu WHERE server_id = $1`},
+			{"memory metrics", `DELETE FROM metric_memory WHERE server_id = $1`},
+			{"disk metrics", `DELETE FROM metric_disk WHERE server_id = $1`},
+			{"network metrics", `DELETE FROM metric_network WHERE server_id = $1`},
+		}
+		for _, step := range steps {
+			if _, err := tx.Exec(ctx, step.sql, serverID); err != nil {
+				slog.Error("delete server: failed to remove dependent rows", "server_id", serverID, "step", step.what, "error", err)
+				http.Error(w, "failed to delete server ("+step.what+")", http.StatusInternalServerError)
+				return
+			}
+		}
 
 		result, err := tx.Exec(ctx, "DELETE FROM servers WHERE id = $1", serverID)
 		if err != nil {
+			slog.Error("delete server failed", "server_id", serverID, "error", err)
 			http.Error(w, "failed to delete server", http.StatusInternalServerError)
 			return
 		}
