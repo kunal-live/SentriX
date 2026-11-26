@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sentrix/server/internal/incidents"
+	"github.com/sentrix/server/internal/notifications"
 	"github.com/sentrix/server/internal/realtime"
 )
 
@@ -217,6 +218,17 @@ func processServerValue(ctx context.Context, pool *pgxpool.Pool, rule engineRule
 
 			upsertState(ctx, pool, rule.ID, serverID, "FIRING", firstBreach, value, &newIncidentID, &cooldown)
 
+			notifications.EnqueueAlertNotification(ctx, pool, notifications.AlertEventParams{
+				EventType:    "alert.firing",
+				RuleID:       rule.ID,
+				ServerID:     serverID,
+				Severity:     rule.Severity,
+				Title:        "Alert firing: " + rule.Name,
+				Message:      fmt.Sprintf("%s: current value %.2f crossed threshold %.2f", rule.Name, value, rule.Threshold),
+				CurrentValue: value,
+				Threshold:    rule.Threshold,
+			})
+
 		case "FIRING":
 			upsertState(ctx, pool, rule.ID, serverID, "FIRING", firstBreach, value, incidentID, cooldownUntil)
 		}
@@ -236,6 +248,17 @@ func processServerValue(ctx context.Context, pool *pgxpool.Pool, rule engineRule
 			upsertState(ctx, pool, rule.ID, serverID, "OK", nil, value, incidentID, &cooldown)
 			resolveIncident(ctx, pool, rule, serverID)
 			logResolvedEvent(ctx, pool, rule, serverID, value)
+
+			notifications.EnqueueAlertNotification(ctx, pool, notifications.AlertEventParams{
+				EventType:    "alert.resolved",
+				RuleID:       rule.ID,
+				ServerID:     serverID,
+				Severity:     rule.Severity,
+				Title:        "Alert resolved: " + rule.Name,
+				Message:      fmt.Sprintf("%s: current value %.2f recovered", rule.Name, value),
+				CurrentValue: value,
+				Threshold:    rule.Threshold,
+			})
 		} else {
 			upsertState(ctx, pool, rule.ID, serverID, "FIRING", firstBreach, value, incidentID, cooldownUntil)
 		}

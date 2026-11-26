@@ -54,6 +54,22 @@ func IsSilenced(ctx context.Context, pool *pgxpool.Pool, serverID, ruleID string
 	return err == nil && exists
 }
 
+// IsServerSilenced reports whether a maintenance window covers the whole server
+// (or everything). Rule-specific silences don't apply to server-level events
+// such as going offline.
+func IsServerSilenced(ctx context.Context, pool *pgxpool.Pool, serverID string) bool {
+	var exists bool
+	err := pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM silences
+			WHERE starts_at <= NOW() AND ends_at >= NOW()
+			  AND rule_id IS NULL
+			  AND (server_id IS NULL OR server_id = $1)
+		)
+	`, serverID).Scan(&exists)
+	return err == nil && exists
+}
+
 // GET /api/v1/silences
 func HandleListSilences(pool *pgxpool.Pool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

@@ -78,7 +78,11 @@ func reconcileServerStatuses(ctx context.Context, pool *pgxpool.Pool) {
 		realtime.PublishServerStatusChanged(id, name, oldStatus, newStatus)
 	}
 
+	rows.Close()
+
 	if changed {
 		realtime.PublishDashboardUpdated()
 	}
+
+	syncOfflineIncidents(ctx, pool)
 }
