@@ -1,4 +1,4 @@
-import { FormEvent, useState, useEffect } from 'react';
+import { FormEvent, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import {
@@ -10,7 +10,6 @@ import {
   useSavePostmortem,
   useUpdateIncident,
 } from '../../hooks/useIncident';
-import { api } from '../../api/client';
 import {
   ArrowLeft,
   AlertTriangle,
@@ -29,12 +28,6 @@ import {
   Zap,
   Users,
   AlertOctagon,
-  ChevronRight,
-  Sparkles,
-  BrainCircuit,
-  Layers,
-  Rocket,
-  GitBranch,
 } from 'lucide-react';
 
 function formatDuration(startIso: string, endIso: string | null): string {
@@ -69,52 +62,6 @@ export function IncidentDetailPage() {
   const [assigneeDraft, setAssigneeDraft] = useState('');
   const [editingAssignee, setEditingAssignee] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [aiRca, setAiRca] = useState<any | null>(null);
-  const [loadingAiRca, setLoadingAiRca] = useState(false);
-  const [generatingPostmortem, setGeneratingPostmortem] = useState(false);
-  const [correlatedDeployments, setCorrelatedDeployments] = useState<any[]>([]);
-
-  // Load correlated releases and deployments
-  useEffect(() => {
-    if (!incidentId) return;
-    api.get('/deployments')
-      .then((res) => {
-        const deps = res.data || [];
-        const matches = deps.filter((d: any) => d.correlated_incident_id === incidentId);
-        setCorrelatedDeployments(matches.length > 0 ? matches : deps.slice(0, 1));
-      })
-      .catch((err) => console.error('Failed to load deployments for incident', err));
-  }, [incidentId]);
-
-  async function handleRunAiRca() {
-    if (!incidentId) return;
-    try {
-      setLoadingAiRca(true);
-      const res = await api.get(`/incidents/${incidentId}/rca`);
-      setAiRca(res.data);
-      if (!rcaDraft && res.data.likely_root_cause) {
-        setRcaDraft(res.data.likely_root_cause);
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoadingAiRca(false);
-    }
-  }
-
-  async function handleGenerateAiPostmortem() {
-    if (!incidentId) return;
-    try {
-      setGeneratingPostmortem(true);
-      const res = await api.post(`/incidents/${incidentId}/postmortem-ai`);
-      setPostmortemDraft(res.data.postmortem);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setGeneratingPostmortem(false);
-    }
-  }
-
   // Sync draft states when incident loads
   if (incident && !postmortemDraft && incident.postmortem) {
     setPostmortemDraft(incident.postmortem);
@@ -465,148 +412,8 @@ export function IncidentDetailPage() {
           </div>
         </div>
 
-        {/* Right Col: AI Intelligence & Postmortem */}
+        {/* Right Col: RCA & Postmortem */}
         <div className="space-y-6">
-          {/* AI Intelligence & RCA Card */}
-          <div className="glass-card rounded-2xl p-6 border border-primary/30 shadow-glass space-y-4 bg-gradient-to-b from-primary/5 to-transparent">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BrainCircuit size={18} className="text-primary-light" />
-                <h2 className="text-base font-semibold text-white">AI Incident Intelligence</h2>
-              </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-primary/20 text-primary-light border border-primary/30">
-                Deterministic Correlation
-              </span>
-            </div>
-
-            <p className="text-xs text-muted leading-relaxed">
-              Cross-correlates multi-dimensional telemetry (metric anomalies, alert firing windows, fatal error logs, and distributed trace spans) across the incident window.
-            </p>
-
-            {!aiRca ? (
-              <button
-                type="button"
-                onClick={handleRunAiRca}
-                disabled={loadingAiRca}
-                className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary-hover text-white text-xs font-semibold flex items-center justify-center gap-2 shadow-glow-primary transition-all"
-              >
-                <Sparkles size={14} className={loadingAiRca ? 'animate-spin' : ''} />
-                <span>{loadingAiRca ? 'Correlating Telemetry Signals...' : 'Compute Evidence-Backed RCA'}</span>
-              </button>
-            ) : (
-              <div className="space-y-4 pt-2 border-t border-border">
-                <div className="p-3.5 rounded-xl bg-background/80 border border-border space-y-2">
-                  <div className="flex items-center justify-between text-xs font-mono">
-                    <span className="text-muted font-medium">Likely Root Cause</span>
-                    <span className="px-2 py-0.5 rounded bg-healthy/10 text-healthy border border-healthy/20 font-bold">
-                      {aiRca.confidence_pct}% Confidence
-                    </span>
-                  </div>
-                  <p className="text-xs text-white font-medium leading-relaxed">
-                    {aiRca.likely_root_cause}
-                  </p>
-                  <div className="text-[11px] text-muted">
-                    <span className="font-semibold text-gray-400">Blast Radius: </span>
-                    {aiRca.blast_radius}
-                  </div>
-                </div>
-
-                {/* Correlated Signals List */}
-                <div className="space-y-2">
-                  <div className="text-xs font-mono text-muted flex items-center gap-1.5">
-                    <Layers size={13} className="text-primary-light" />
-                    <span>Correlated Telemetry Signals ({aiRca.correlated_signals?.length || 0})</span>
-                  </div>
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                    {aiRca.correlated_signals?.map((sig: any, idx: number) => (
-                      <div key={idx} className="p-2.5 rounded-lg bg-surface/50 border border-border text-[11px] space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className={`px-1.5 py-0.2 rounded font-mono text-[9px] uppercase font-bold ${
-                            sig.type === 'METRIC' ? 'bg-indigo-500/20 text-indigo-400' :
-                            sig.type === 'ALERT' ? 'bg-amber-500/20 text-amber-400' :
-                            sig.type === 'LOG' ? 'bg-rose-500/20 text-rose-400' :
-                            'bg-blue-500/20 text-blue-400'
-                          }`}>
-                            {sig.type}
-                          </span>
-                          <span className="text-muted text-[10px] font-mono">
-                            {new Date(sig.timestamp).toLocaleTimeString()}
-                          </span>
-                        </div>
-                        <p className="text-text">{sig.description}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Generate AI Postmortem Button */}
-                <button
-                  type="button"
-                  onClick={handleGenerateAiPostmortem}
-                  disabled={generatingPostmortem}
-                  className="w-full py-2 rounded-xl bg-surface-elevated hover:bg-surface-highlight border border-border text-xs font-semibold text-white flex items-center justify-center gap-2 transition-all"
-                >
-                  <Sparkles size={13} className="text-primary-light" />
-                  <span>{generatingPostmortem ? 'Drafting Postmortem...' : 'Draft Postmortem with AI'}</span>
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Phase 18: Correlated Deployments & Recent Changes Card */}
-          <div className="glass-card rounded-2xl p-6 border border-border shadow-glass space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Rocket size={17} className="text-primary-light" />
-                <h2 className="text-base font-semibold text-white">Recent Releases & Changes</h2>
-              </div>
-              <Link
-                to="/deployments"
-                className="text-[11px] font-mono text-primary-light hover:underline flex items-center gap-1"
-              >
-                <span>All Deployments</span>
-                <ChevronRight size={12} />
-              </Link>
-            </div>
-
-            <p className="text-xs text-muted leading-relaxed">
-              Automated correlation detects software releases or configuration rollouts deployed immediately preceding incident onset.
-            </p>
-
-            <div className="space-y-2.5">
-              {correlatedDeployments.map((dep) => (
-                <div
-                  key={dep.id}
-                  className="p-3.5 rounded-xl bg-surface/60 border border-primary/30 space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-white text-xs">{dep.service_name}</span>
-                      <span className="px-1.5 py-0.2 rounded font-mono text-[10px] bg-primary/20 text-primary-light font-bold">
-                        {dep.version}
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-mono text-critical bg-critical/10 px-2 py-0.5 rounded border border-critical/20 font-bold">
-                      Suspect Trigger
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 text-[11px] font-mono text-muted">
-                    <GitBranch size={12} className="text-primary-light" />
-                    <span className="text-white font-semibold">{dep.commit_sha}</span>
-                    <span>•</span>
-                    <span className="text-text-dim truncate">{dep.commit_message}</span>
-                  </div>
-
-                  <div className="text-[10px] font-mono text-muted flex items-center justify-between pt-1 border-t border-border/40">
-                    <span>Author: {dep.author}</span>
-                    <span>Deployed: {new Date(dep.started_at).toLocaleTimeString()}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
           {/* Manual RCA & Postmortem Card */}
           <div className="glass-card rounded-2xl p-6 border border-border shadow-glass space-y-5">
             <div className="flex items-center justify-between">

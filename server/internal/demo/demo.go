@@ -15,29 +15,19 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/sentrix/server/internal/agents"
-	"github.com/sentrix/server/internal/ai"
 	"github.com/sentrix/server/internal/alerts"
 	"github.com/sentrix/server/internal/auth"
 	"github.com/sentrix/server/internal/automation"
-	"github.com/sentrix/server/internal/capacity"
-	"github.com/sentrix/server/internal/compliance"
 	"github.com/sentrix/server/internal/containers"
 	"github.com/sentrix/server/internal/dashboards"
 	"github.com/sentrix/server/internal/databases"
-	"github.com/sentrix/server/internal/deployments"
 	"github.com/sentrix/server/internal/developer"
-	"github.com/sentrix/server/internal/integrations"
-	"github.com/sentrix/server/internal/intelligence"
 	"github.com/sentrix/server/internal/logs"
 	"github.com/sentrix/server/internal/network"
 	"github.com/sentrix/server/internal/notifications"
-	"github.com/sentrix/server/internal/organizations"
 	"github.com/sentrix/server/internal/realtime"
-	"github.com/sentrix/server/internal/scale"
 	"github.com/sentrix/server/internal/security"
-	"github.com/sentrix/server/internal/servicemap"
 	"github.com/sentrix/server/internal/services"
-	"github.com/sentrix/server/internal/slo"
 	"github.com/sentrix/server/internal/traces"
 )
 
@@ -1325,14 +1315,6 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		r.Post("/otlp/v1/traces", traces.HandleIngestTraces(nil))
 		r.Post("/v1/traces", traces.HandleIngestTraces(nil))
 
-		// Service Map & Synthetics
-		r.Get("/service-map", servicemap.HandleGetServiceMap(nil))
-		r.Get("/synthetics", servicemap.HandleGetSynthetics(nil))
-
-		// SLO & Reliability Intelligence
-		r.Get("/slos", slo.HandleListSLOs(nil))
-		r.Post("/slos", slo.HandleCreateSLO(nil))
-
 		// Custom Dashboards & Widgets
 		r.Get("/dashboards", dashboards.HandleListDashboards(nil))
 		r.Get("/dashboards/{id}", dashboards.HandleGetDashboard(nil))
@@ -1867,10 +1849,6 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		r.Post("/kubernetes/ingest", containers.HandleIngestK8sMetrics(nil))
 		r.Get("/kubernetes/daemonset.yaml", containers.HandleServeK8sDaemonSet())
 
-		// Incident Intelligence & AI RCA
-		r.Get("/incidents/{incidentID}/rca", ai.HandleGetIncidentRCA(nil))
-		r.Post("/incidents/{incidentID}/postmortem-ai", ai.HandleGeneratePostmortemAI(nil))
-
 		// Operational Runbooks & Safe Automation
 		r.Get("/runbooks", automation.HandleListRunbooks(nil))
 		r.Get("/runbooks/{id}", automation.HandleGetRunbook(nil))
@@ -1878,28 +1856,11 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		r.Get("/automation/executions", automation.HandleListExecutions(nil))
 		r.Post("/automation/executions/{execID}/approve", automation.HandleApproveExecution(nil))
 
-		// Integrations Hub & Dead Letter Queue (DLQ)
-		r.Get("/integrations", integrations.HandleListIntegrations(nil))
-		r.Post("/integrations/test", integrations.HandleTestIntegration(nil))
-		r.Get("/notifications/dlq", integrations.HandleListDLQ(nil))
-		r.Post("/notifications/dlq/{id}/replay", integrations.HandleReplayDLQ(nil))
-
 		// Phase 15: Enterprise Identity & Security Center
 		r.Get("/security/events", security.HandleListSecurityEvents(nil))
 		r.Get("/security/sessions", security.HandleListSessions(nil))
 		r.Post("/security/sessions/{id}/revoke", security.HandleRevokeSession(nil))
 		r.Get("/security/sso", security.HandleGetSSOConfig(nil))
-
-		// Phase 16: Multi-Tenancy & Organizations
-		r.Get("/organizations", organizations.HandleListOrganizations(nil))
-		r.Post("/organizations", organizations.HandleCreateOrganization(nil))
-		r.Get("/organizations/{id}/teams", organizations.HandleListTeams(nil))
-		r.Get("/organizations/{id}/quota", organizations.HandleGetTenantQuota(nil))
-
-		// Phase 18: Deployment & Change Intelligence
-		r.Get("/deployments", deployments.HandleListDeployments(nil))
-		r.Post("/deployments", deployments.HandleCreateDeployment(nil))
-		r.Get("/changes", deployments.HandleListChanges(nil))
 
 		// Phase 24: Developer Platform & Scoped API Keys
 		r.Get("/api-keys", developer.HandleListAPIKeys(nil))
@@ -1907,28 +1868,13 @@ func RegisterDemoRoutes(r chi.Router, bus *realtime.Bus, hub *realtime.Hub, tick
 		r.Delete("/api-keys/{id}", developer.HandleRevokeAPIKey(nil))
 		r.Get("/openapi.json", developer.HandleGetOpenAPISpec(nil))
 
-		// Phase 17: High Availability & Scale Benchmarks
-		r.Get("/scale/benchmarks", scale.HandleListBenchmarks(nil))
-		r.Post("/scale/benchmark/run", scale.HandleRunBenchmark(nil))
-
-		// Phase 20: Capacity Planning & FinOps
-		r.Get("/capacity/forecasts", capacity.HandleListForecasts(nil))
-		r.Get("/capacity/finops", capacity.HandleGetFinOps(nil))
-
 		// Phase 21: Advanced Database & Network Diagnostics
 		r.Get("/databases/postgres", databases.HandleGetPostgresDiagnostics(nil))
 		r.Post("/databases/slow-queries/ingest", databases.HandleIngestSlowQueries(nil))
 		r.Get("/network/diagnostics", network.HandleGetNetworkDiagnostics(nil))
 		r.Post("/network/flows/ingest", network.HandleIngestNetworkFlows(nil))
 
-		// Phase 23: Compliance, Disaster Recovery & SBOM
-		r.Get("/compliance/frameworks", compliance.HandleListFrameworks(nil))
-		r.Get("/compliance/dr", compliance.HandleGetDRPosture(nil))
-		r.Get("/compliance/sbom", compliance.HandleGetSBOM(nil))
-
 		// Phase 25: SentriX Intelligence 2.0 Multi-Signal Evidence Graph
-		r.Get("/intelligence/evidence-graph", intelligence.HandleGetEvidenceGraph(nil))
-		r.Post("/intelligence/correlate", intelligence.HandleCorrelate(nil))
 	})
 
 	// WebSocket handler

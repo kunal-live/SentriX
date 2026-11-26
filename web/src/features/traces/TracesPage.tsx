@@ -14,7 +14,6 @@ import {
   Layers,
   X,
   Server,
-  Share2,
   Terminal,
   Send,
   Zap,
@@ -152,14 +151,6 @@ export function TracesPage() {
             <Zap size={14} />
             <span>OTel Ingestion Guide</span>
           </button>
-
-          <Link
-            to="/service-map"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-surface hover:bg-surface-highlight text-xs font-mono text-white border border-border transition-colors shadow-sm"
-          >
-            <Share2 size={13} className="text-primary-light" />
-            <span>Service Map</span>
-          </Link>
         </div>
       </div>
 

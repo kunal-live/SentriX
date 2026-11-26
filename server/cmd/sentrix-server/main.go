@@ -18,37 +18,27 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/sentrix/server/internal/agents"
-	"github.com/sentrix/server/internal/ai"
 	"github.com/sentrix/server/internal/alerts"
 	"github.com/sentrix/server/internal/api"
 	"github.com/sentrix/server/internal/auth"
 	"github.com/sentrix/server/internal/automation"
-	"github.com/sentrix/server/internal/capacity"
 	"github.com/sentrix/server/internal/checks"
-	"github.com/sentrix/server/internal/compliance"
 	"github.com/sentrix/server/internal/containers"
 	"github.com/sentrix/server/internal/dashboards"
 	"github.com/sentrix/server/internal/databases"
 	"github.com/sentrix/server/internal/demo"
-	"github.com/sentrix/server/internal/deployments"
 	"github.com/sentrix/server/internal/developer"
 	"github.com/sentrix/server/internal/health"
 	"github.com/sentrix/server/internal/incidents"
-	"github.com/sentrix/server/internal/integrations"
-	"github.com/sentrix/server/internal/intelligence"
 	"github.com/sentrix/server/internal/logs"
 	"github.com/sentrix/server/internal/metrics"
 	"github.com/sentrix/server/internal/network"
 	"github.com/sentrix/server/internal/notifications"
-	"github.com/sentrix/server/internal/organizations"
 	"github.com/sentrix/server/internal/realtime"
-	"github.com/sentrix/server/internal/scale"
 	"github.com/sentrix/server/internal/security"
 	"github.com/sentrix/server/internal/selfmetrics"
 	"github.com/sentrix/server/internal/servers"
-	"github.com/sentrix/server/internal/servicemap"
 	"github.com/sentrix/server/internal/services"
-	"github.com/sentrix/server/internal/slo"
 	"github.com/sentrix/server/internal/storage"
 	"github.com/sentrix/server/internal/traces"
 )
@@ -281,14 +271,6 @@ func main() {
 				r.Get("/traces", traces.HandleListTraces(pool))
 				r.Get("/traces/{traceID}", traces.HandleGetTrace(pool))
 
-				// Service Dependency Map & Synthetics
-				r.Get("/service-map", servicemap.HandleGetServiceMap(pool))
-				r.Get("/synthetics", servicemap.HandleGetSynthetics(pool))
-
-				// SLO & Reliability Intelligence
-				r.Get("/slos", slo.HandleListSLOs(pool))
-				r.Post("/slos", slo.HandleCreateSLO(pool))
-
 				// Custom Dashboards & Widgets
 				r.Get("/dashboards", dashboards.HandleListDashboards(pool))
 				r.Get("/dashboards/{id}", dashboards.HandleGetDashboard(pool))
@@ -310,8 +292,6 @@ func main() {
 				r.Post("/incidents/{incidentID}/notes", incidents.HandleAddComment(pool))
 				r.Post("/incidents/{incidentID}/comments", incidents.HandleAddComment(pool))
 				r.Post("/incidents/{incidentID}/postmortem", incidents.HandleSavePostmortem(pool))
-				r.Get("/incidents/{incidentID}/rca", ai.HandleGetIncidentRCA(pool))
-				r.Post("/incidents/{incidentID}/postmortem-ai", ai.HandleGeneratePostmortemAI(pool))
 
 				// Agent Fleet Management (read)
 				r.Get("/agents", agents.HandleListAgents(pool))
@@ -327,28 +307,11 @@ func main() {
 				r.Get("/runbooks/{id}", automation.HandleGetRunbook(pool))
 				r.Get("/automation/executions", automation.HandleListExecutions(pool))
 
-				// Integrations Hub & Dead Letter Queue (DLQ)
-				r.Get("/integrations", integrations.HandleListIntegrations(pool))
-				r.Post("/integrations/test", integrations.HandleTestIntegration(pool))
-				r.Get("/notifications/dlq", integrations.HandleListDLQ(pool))
-				r.Post("/notifications/dlq/{id}/replay", integrations.HandleReplayDLQ(pool))
-
 				// Phase 15: Enterprise Identity & Security Center
 				r.Get("/security/events", security.HandleListSecurityEvents(pool))
 				r.Get("/security/sessions", auth.HandleListSessions(pool))
 				r.Post("/security/sessions/{id}/revoke", auth.HandleRevokeSession(pool))
 				r.Get("/security/sso", security.HandleGetSSOConfig(pool))
-
-				// Phase 16: Multi-Tenancy & Organizations
-				r.Get("/organizations", organizations.HandleListOrganizations(pool))
-				r.Post("/organizations", organizations.HandleCreateOrganization(pool))
-				r.Get("/organizations/{id}/teams", organizations.HandleListTeams(pool))
-				r.Get("/organizations/{id}/quota", organizations.HandleGetTenantQuota(pool))
-
-				// Phase 18: Deployment & Change Intelligence
-				r.Get("/deployments", deployments.HandleListDeployments(pool))
-				r.Post("/deployments", deployments.HandleCreateDeployment(pool))
-				r.Get("/changes", deployments.HandleListChanges(pool))
 
 				// Phase 24: Developer Platform & Scoped API Keys
 				r.Get("/api-keys", developer.HandleListAPIKeys(pool))
@@ -356,28 +319,11 @@ func main() {
 				r.Delete("/api-keys/{id}", developer.HandleRevokeAPIKey(pool))
 				r.Get("/openapi.json", developer.HandleGetOpenAPISpec(pool))
 
-				// Phase 17: High Availability & Scale Benchmarks
-				r.Get("/scale/benchmarks", scale.HandleListBenchmarks(pool))
-				r.Post("/scale/benchmark/run", scale.HandleRunBenchmark(pool))
-
-				// Phase 20: Capacity Planning & FinOps
-				r.Get("/capacity/forecasts", capacity.HandleListForecasts(pool))
-				r.Get("/capacity/finops", capacity.HandleGetFinOps(pool))
-
 				// Phase 21: Advanced Database & Network Diagnostics
 				r.Get("/databases/postgres", databases.HandleGetPostgresDiagnostics(pool))
 				r.Post("/databases/slow-queries/ingest", databases.HandleIngestSlowQueries(pool))
 				r.Get("/network/diagnostics", network.HandleGetNetworkDiagnostics(pool))
 				r.Post("/network/flows/ingest", network.HandleIngestNetworkFlows(pool))
-
-				// Phase 23: Compliance, Disaster Recovery & SBOM
-				r.Get("/compliance/frameworks", compliance.HandleListFrameworks(pool))
-				r.Get("/compliance/dr", compliance.HandleGetDRPosture(pool))
-				r.Get("/compliance/sbom", compliance.HandleGetSBOM(pool))
-
-				// Phase 25: SentriX Intelligence 2.0 Multi-Signal Evidence Graph
-				r.Get("/intelligence/evidence-graph", intelligence.HandleGetEvidenceGraph(pool))
-				r.Post("/intelligence/correlate", intelligence.HandleCorrelate(pool))
 
 				// Checks management
 				r.Post("/checks", checks.HandleCreateCheck(pool))
