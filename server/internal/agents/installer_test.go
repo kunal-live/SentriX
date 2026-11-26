@@ -54,3 +54,14 @@ func TestGenerateInstallScriptEnablesInsecureHTTPForPlainHTTP(t *testing.T) {
 		}
 	}
 }
+
+// A reinstall must replace the running agent, which "enable --now" would not do.
+func TestGenerateInstallScriptRestartsAgent(t *testing.T) {
+	script := generateInstallScript("https://sentrix.example.com")
+	if !strings.Contains(script, "systemctl restart sentrix-agent") {
+		t.Fatal("install script must restart sentrix-agent so a reinstall picks up the new credential")
+	}
+	if strings.Contains(script, "enable --now") {
+		t.Fatal("install script should not rely on enable --now")
+	}
+}

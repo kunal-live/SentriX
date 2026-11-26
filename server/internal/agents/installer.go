@@ -230,8 +230,11 @@ echo "       Config:      /etc/sentrix/agent.env"
 
 # ── Start the service ────────────────────────────────────────────
 echo "[6/6] Starting sentrix-agent service..."
-systemctl enable --now sentrix-agent
-echo "       Service started and enabled"
+systemctl enable sentrix-agent >/dev/null 2>&1
+# Always restart: on a reinstall the old agent is still running
+# with the old credential, and a plain start would leave it running.
+systemctl restart sentrix-agent
+echo "       Service (re)started and enabled"
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════╗"
