@@ -11,75 +11,101 @@
     margin: 0;
     min-width: 320px;
     min-height: 100vh;
-    background-color: #090b10;
-    color: #f1f5f9;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: #000000;
+    color: #ffffff;
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-variant-numeric: tabular-nums;
+    caret-color: #ffffff;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     overflow-x: hidden;
   }
 
   ::selection {
-    background: rgba(99, 102, 241, 0.4);
-    color: #ffffff;
+    background: #ffffff;
+    color: #000000;
   }
 
-  /* Modern custom scrollbar */
+  /* Crisp monochrome scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
+
   ::-webkit-scrollbar-track {
-    background: #090b10;
+    background: #000000;
   }
+
   ::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.12);
-    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.24);
+    border-radius: 0px;
   }
+
   ::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.5);
   }
 }
 
 @layer utilities {
   .ambient-mesh {
-    background-image: 
-      radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.1) 0px, transparent 50%),
-      radial-gradient(at 100% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 40%),
-      radial-gradient(at 50% 100%, rgba(139, 92, 246, 0.06) 0px, transparent 50%);
+    background-color: #000000;
   }
 
   .glass-card {
-    background: rgba(17, 21, 32, 0.75);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.35);
+    background: #050505;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow: none;
+    border-radius: 0px;
   }
 
   .glass-card:hover {
-    border-color: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.45);
   }
 
   .glass-card-interactive {
-    background: rgba(17, 21, 32, 0.75);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    background: #050505;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 0px;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
   }
 
   .glass-card-interactive:hover {
-    transform: translateY(-2px);
-    border-color: rgba(99, 102, 241, 0.3);
-    box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.5), 0 0 15px -3px rgba(99, 102, 241, 0.15);
+    background: #0a0a0a;
+    border-color: rgba(255, 255, 255, 0.55);
   }
 
   .glass-panel {
-    background: rgba(14, 17, 26, 0.85);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
-    border-color: rgba(255, 255, 255, 0.08);
+    background: #050505;
+    border-color: rgba(255, 255, 255, 0.22);
+    border-radius: 0px;
+  }
+
+  /* Sharp architectural telemetry corners across panels, buttons, and inputs */
+  .rounded-md,
+  .rounded-lg,
+  .rounded-xl,
+  .rounded-2xl,
+  .rounded-3xl {
+    border-radius: 0px;
+  }
+
+  /* Keep primary white CTAs readable with crisp black text */
+  .bg-primary.text-white,
+  .bg-primary\/90.text-white,
+  .bg-primary-hover.text-white {
+    color: #000000;
+  }
+
+  /* Neutralize legacy slate tints to pure monochrome */
+  .text-slate-300 {
+    color: #d4d4d4;
+  }
+
+  .text-slate-400 {
+    color: #a3a3a3;
+  }
+
+  .text-slate-500 {
+    color: #737373;
   }
 }

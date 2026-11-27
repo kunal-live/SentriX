@@ -327,9 +327,9 @@ export function DashboardsPage() {
                               <Line
                                 type="monotone"
                                 dataKey="value"
-                                stroke="#6366f1"
+                                stroke="#ffffff"
                                 strokeWidth={2.5}
-                                dot={{ fill: '#6366f1', r: 3 }}
+                                dot={{ fill: '#ffffff', r: 3 }}
                               />
                             </LineChart>
                           </ResponsiveContainer>

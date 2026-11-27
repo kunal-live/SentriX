@@ -319,7 +319,7 @@ export function NetworkPage() {
               <svg viewBox="0 0 900 420" className="w-full min-w-[680px] h-[420px]">
                 <defs>
                   <marker id="flow-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                    <path d="M 0 1 L 10 5 L 0 9 z" fill="#6366f1" />
+                    <path d="M 0 1 L 10 5 L 0 9 z" fill="#ffffff" />
                   </marker>
                   <marker id="flow-arrow-warn" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
                     <path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b" />
@@ -339,7 +339,7 @@ export function NetworkPage() {
 
                   const isHighlighted = !selectedNodeId || edge.source === selectedNodeId || edge.target === selectedNodeId;
                   const isWarn = edge.p95_latency_ms > 80 || edge.error_rate_pct > 0.5;
-                  const strokeColor = isWarn ? '#f59e0b' : '#6366f1';
+                  const strokeColor = isWarn ? '#f59e0b' : '#ffffff';
                   const midX = (src.x + dst.x) / 2;
                   const midY = (src.y + dst.y) / 2 - 10;
                   const pathD = `M ${src.x + 62} ${src.y} C ${midX} ${src.y}, ${midX} ${dst.y}, ${dst.x - 62} ${dst.y}`;
@@ -560,8 +560,8 @@ export function NetworkPage() {
                       <stop offset="95%" stopColor="#06b6d4" stopOpacity={0} />
                     </linearGradient>
                     <linearGradient id="txGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.35} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      <stop offset="5%" stopColor="#ffffff" stopOpacity={0.35} />
+                      <stop offset="95%" stopColor="#ffffff" stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
@@ -571,7 +571,7 @@ export function NetworkPage() {
                     contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '12px' }}
                   />
                   <Area type="monotone" dataKey="rx_mbps" name="RX Ingress" stroke="#06b6d4" fillOpacity={1} fill="url(#rxGrad)" />
-                  <Area type="monotone" dataKey="tx_mbps" name="TX Egress" stroke="#6366f1" fillOpacity={1} fill="url(#txGrad)" />
+                  <Area type="monotone" dataKey="tx_mbps" name="TX Egress" stroke="#ffffff" fillOpacity={1} fill="url(#txGrad)" />
                   <Area type="monotone" dataKey="mesh_mbps" name="East-West Mesh" stroke="#10b981" fillOpacity={0.1} fill="#10b981" />
                 </AreaChart>
               </ResponsiveContainer>

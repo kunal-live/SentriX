@@ -175,8 +175,8 @@ export const KubernetesPage: React.FC = () => {
                 Live DaemonSet Active
               </span>
             ) : (
-              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                <span className="w-2 h-2 rounded-full bg-indigo-400" />
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-mono bg-white/10 text-white border border-white/25">
+                <span className="w-2 h-2 rounded-full bg-white" />
                 Cluster Fleet Telemetry
               </span>
             )}
@@ -355,7 +355,7 @@ export const KubernetesPage: React.FC = () => {
                         <td className="px-6 py-4">
                           <div className="text-xs font-mono font-medium text-white mb-1">{n.cpu_usage_pct.toFixed(1)}%</div>
                           <div className="w-24 bg-[#1e222a] rounded-full h-1.5 overflow-hidden">
-                            <div className="bg-indigo-500 h-full rounded-full" style={{ width: `${n.cpu_usage_pct}%` }} />
+                            <div className="bg-white h-full rounded-full" style={{ width: `${n.cpu_usage_pct}%` }} />
                           </div>
                         </td>
                         <td className="px-6 py-4">

@@ -294,23 +294,23 @@ export function Layout({ children }: { children: ReactNode }) {
                         <Link
                           key={item.path}
                           to={item.path}
-                          className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all group relative ${
+                          className={`flex items-center justify-between px-2.5 py-1.5 text-xs font-medium transition-all group relative ${
                             isActive
-                              ? 'bg-primary/20 text-white font-semibold border border-primary/35 shadow-sm'
-                              : 'text-slate-400 hover:text-white hover:bg-surface/80 hover:border hover:border-border/60'
+                              ? 'bg-white text-black font-semibold border border-white'
+                              : 'text-muted hover:text-white hover:bg-surface-highlight border border-transparent hover:border-border'
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div
-                              className={`p-1 rounded-md transition-colors shrink-0 ${
+                              className={`p-1 transition-colors shrink-0 ${
                                 isActive
-                                  ? 'bg-primary text-white shadow-sm'
+                                  ? 'bg-black text-white'
                                   : 'text-muted group-hover:text-white bg-surface-highlight/50'
                               }`}
                             >
                               <Icon size={14} />
                             </div>
-                            <span className="truncate tracking-tight">{item.label}</span>
+                            <span className="truncate tracking-tight uppercase text-[11px]">{item.label}</span>
                           </div>
 
                           {/* Dynamic badges */}

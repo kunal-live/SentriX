@@ -59,7 +59,7 @@ const rangesList = [
   { key: '7d', label: '7d' },
 ];
 
-const serverColors = ['#6366f1', '#f59e0b', '#06b6d4', '#10b981', '#ec4899', '#8b5cf6'];
+const serverColors = ['#ffffff', '#f59e0b', '#06b6d4', '#10b981', '#ec4899', '#8b5cf6'];
 
 export function MetricsExplorerPage() {
   const [selectedMetric, setSelectedMetric] = useState('cpu');

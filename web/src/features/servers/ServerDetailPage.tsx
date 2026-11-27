@@ -43,7 +43,7 @@ const ranges = [
 ];
 
 const metricTabs = [
-  { key: 'cpu', label: 'CPU Utilization', icon: Cpu, color: '#6366f1', gradient: 'colorCpu' },
+  { key: 'cpu', label: 'CPU Utilization', icon: Cpu, color: '#ffffff', gradient: 'colorCpu' },
   { key: 'memory', label: 'Memory Pressure', icon: CircuitBoard, color: '#f59e0b', gradient: 'colorMem' },
   { key: 'disk', label: 'Storage I/O & Disk', icon: HardDrive, color: '#06b6d4', gradient: 'colorDisk' },
 ];

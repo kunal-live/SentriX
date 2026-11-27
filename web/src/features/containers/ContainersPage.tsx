@@ -117,7 +117,7 @@ export const ContainersPage: React.FC = () => {
           title="Aggregate CPU Saturation"
           value={`${totalCPU.toFixed(1)}%`}
           subtitle="Across Host Cores"
-          icon={<Cpu className="w-5 h-5 text-indigo-400" />}
+          icon={<Cpu className="w-5 h-5 text-white" />}
         />
         <MetricCard
           title="Allocated Container RAM"
@@ -208,14 +208,14 @@ export const ContainersPage: React.FC = () => {
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-gray-400 flex items-center gap-1">
-                        <Cpu className="w-3 h-3 text-indigo-400" /> CPU
+                        <Cpu className="w-3 h-3 text-white" /> CPU
                       </span>
                       <span className="font-mono text-white font-medium">{c.cpu_usage_pct.toFixed(1)}%</span>
                     </div>
                     <div className="w-full bg-[#1e222a] rounded-full h-1.5 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
-                          c.cpu_usage_pct > 80 ? 'bg-rose-500' : c.cpu_usage_pct > 50 ? 'bg-amber-500' : 'bg-indigo-500'
+                          c.cpu_usage_pct > 80 ? 'bg-rose-500' : c.cpu_usage_pct > 50 ? 'bg-amber-500' : 'bg-white'
                         }`}
                         style={{ width: `${Math.min(100, c.cpu_usage_pct)}%` }}
                       />
